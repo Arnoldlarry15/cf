@@ -1,0 +1,32 @@
+body, html {
+  margin: 0;
+  padding: 0;
+  width: 100vw;
+  height: 100vh;
+  overflow: hidden;
+  user-select: none;
+  cursor: crosshair;
+  background: transparent;
+}
+
+#desktop-bg {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100vw;
+  height: 100vh;
+  object-fit: contain; /* or cover depending on scaling */
+  z-index: 1;
+}
+
+#selection {
+  position: absolute;
+  border: 1px solid #0078D7;
+  background: transparent;
+  box-shadow: 0 0 0 9999px rgba(0, 0, 0, 0.15); 
+  z-index: 3;
+  display: none;
+  pointer-events: none;
+}
+
+/* We will handle the "bright selection, dim background" effect using box-shadow on the selection element */

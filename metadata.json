@@ -1,0 +1,6 @@
+{
+  "name": "CaptureFlow Dashboard",
+  "description": "An immersive digital memory space and cognitive dashboard that organizes, searches, and replays memories using semantically linked 3D knowledge graphs and AI.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
