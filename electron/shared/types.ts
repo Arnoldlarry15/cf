@@ -34,8 +34,16 @@ export interface ChatMessage {
   linkedMemories?: string[];
 }
 
+export const CAPTUREFLOW_API_VERSION = "1.0";
+
 export interface CaptureFlowAPI {
-  version: string;
+  version: typeof CAPTUREFLOW_API_VERSION;
+  capabilities: {
+    ai: boolean;
+    offlineMode: boolean;
+    globalHotkeys: boolean;
+    multiMonitorCapture: boolean;
+  };
   onStartSnipping: (callback: (dataUrl: string) => void) => () => void;
   processSnippet: (data: { dataUrl: string; rect: any }) => void;
   closeSnipper: () => void;

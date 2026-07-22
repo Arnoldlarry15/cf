@@ -2,6 +2,12 @@ const { contextBridge, ipcRenderer } = require('electron');
 
 contextBridge.exposeInMainWorld('captureflow', {
   version: '1.0',
+  capabilities: {
+    ai: true,
+    offlineMode: true,
+    globalHotkeys: true,
+    multiMonitorCapture: false
+  },
   // Snipper
   onStartSnipping: (callback) => {
     const subscription = (event, dataUrl) => callback(dataUrl);
