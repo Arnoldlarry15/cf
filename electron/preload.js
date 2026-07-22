@@ -1,6 +1,7 @@
 const { contextBridge, ipcRenderer } = require('electron');
 
 contextBridge.exposeInMainWorld('captureflow', {
+  version: '1.0',
   // Snipper
   onStartSnipping: (callback) => {
     const subscription = (event, dataUrl) => callback(dataUrl);

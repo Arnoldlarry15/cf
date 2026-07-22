@@ -35,6 +35,7 @@ export interface ChatMessage {
 }
 
 export interface CaptureFlowAPI {
+  version: string;
   onStartSnipping: (callback: (dataUrl: string) => void) => () => void;
   processSnippet: (data: { dataUrl: string; rect: any }) => void;
   closeSnipper: () => void;
