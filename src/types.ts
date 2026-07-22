@@ -72,7 +72,7 @@ declare global {
         get: () => Promise<Memory[]>;
         getKnowledge: () => Promise<string>;
         delete: (id: string) => void;
-        capture: (payload: Omit<Memory, 'id' | 'timestamp' | 'confidence' | 'relationships' | 'history'>) => void;
+        capture: (payload: Omit<Memory, 'id' | 'timestamp' | 'confidence' | 'relationships' | 'history' | 'imageUrl'>) => void;
         onUpdated: (callback: () => void) => () => void;
       };
       settings: {
