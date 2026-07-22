@@ -1,30 +1,6 @@
-export interface MemoryRelationship {
-  targetId: string;
-  type: 'semantic' | 'temporal' | 'contextual' | 'usage';
-  weight: number; // 0.0 to 1.0 representing strength
-}
+import { MemoryRelationship, MemoryHistoryEvent, Memory, ChatMessage } from '../electron/shared/types';
 
-export interface MemoryHistoryEvent {
-  timestamp: string;
-  action: string;
-  details: string;
-}
-
-export interface Memory {
-  id: string;
-  imageUrl: string;
-  ocrText: string;
-  timestamp: string; // ISO 8601
-  application: string; // e.g. "Slack", "VS Code", "Figma", "Notion", "Chrome"
-  windowTitle: string;
-  url?: string;
-  summary: string;
-  tags: string[];
-  confidence: number; // 0.0 to 1.0 OCR accuracy
-  category: 'Work' | 'Design' | 'Dev' | 'Productivity' | 'Leisure';
-  relationships: MemoryRelationship[];
-  history: MemoryHistoryEvent[];
-}
+export type { MemoryRelationship, MemoryHistoryEvent, Memory, ChatMessage };
 
 export interface SearchQuery {
   text: string;
@@ -52,14 +28,6 @@ export interface GraphEdge {
   target: string;
   weight: number;
   type: string;
-}
-
-export interface ChatMessage {
-  id: string;
-  role: 'user' | 'model';
-  text: string;
-  timestamp: string;
-  linkedMemories?: string[]; // IDs of memories relevant to this response
 }
 
 declare global {

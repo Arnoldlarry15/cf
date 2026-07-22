@@ -1,4 +1,5 @@
 const { ipcMain, Notification } = require('electron');
+const { validateSnippetPayload } = require('../shared/validation');
 
 function registerSnippetsIPC(snippetService, aiService, windowsManager) {
   ipcMain.on('close-snipper', () => {
@@ -95,6 +96,13 @@ function registerSnippetsIPC(snippetService, aiService, windowsManager) {
   });
 
   ipcMain.on('capture-snippet', (event, payload) => {
+    try {
+      validateSnippetPayload(payload);
+    } catch (err) {
+      console.error('IPC snippet payload validation failed:', err.message);
+      return;
+    }
+
     const newSnippet = {
       id: payload.id || `mem-${Date.now()}`,
       imageUrl: payload.imageUrl || payload.application.toLowerCase().replace(/[^a-z]/g, '_') || 'chrome_search',
