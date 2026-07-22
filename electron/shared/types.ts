@@ -33,3 +33,31 @@ export interface ChatMessage {
   timestamp: string;
   linkedMemories?: string[];
 }
+
+export interface CaptureFlowAPI {
+  onStartSnipping: (callback: (dataUrl: string) => void) => () => void;
+  processSnippet: (data: { dataUrl: string; rect: any }) => void;
+  closeSnipper: () => void;
+  snippets: {
+    get: () => Promise<Memory[]>;
+    getKnowledge: () => Promise<string>;
+    delete: (id: string) => void;
+    capture: (payload: Omit<Memory, 'id' | 'timestamp' | 'confidence' | 'relationships' | 'history' | 'imageUrl'>) => void;
+    onUpdated: (callback: () => void) => () => void;
+  };
+  settings: {
+    get: () => Promise<any>;
+    save: (settings: any) => void;
+    onUpdated: (callback: () => void) => () => void;
+  };
+  ai: {
+    chat: (messages: Pick<ChatMessage, 'role' | 'text'>[]) => Promise<{
+      success: boolean;
+      provider: string;
+      text: string;
+      linkedMemories: string[];
+      code?: string;
+      message?: string;
+    }>;
+  };
+}
