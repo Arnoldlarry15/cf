@@ -14,12 +14,28 @@ import MemoryDetailModal from './components/MemoryDetailModal';
 
 export default function App() {
   const activeTab = useAppStore(state => state.activeTab);
+  const setActiveTab = useAppStore(state => state.setActiveTab);
   const fetchMemories = useAppStore(state => state.fetchMemories);
   const selectedMemoryId = useAppStore(state => state.selectedMemoryId);
   const selectMemory = useAppStore(state => state.selectMemory);
 
   // Split-panel right sidebar tabs: 'assistant' or 'inspector'
   const [rightTab, setRightTab] = useState<'assistant' | 'inspector'>('assistant');
+
+  // Global Escape key listener to exit modals or step back to dashboard
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        if (selectedMemoryId) {
+          selectMemory(null);
+        } else if (activeTab !== 'dashboard') {
+          setActiveTab('dashboard');
+        }
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [selectedMemoryId, activeTab, selectMemory, setActiveTab]);
 
   // Trigger initial database fetch and subscribe to Electron updates
   useEffect(() => {
@@ -48,6 +64,20 @@ export default function App() {
 
         {/* Center Main Workspace (Flexible) */}
         <div className="flex-1 flex flex-col min-w-0 h-full overflow-hidden">
+          {activeTab !== 'dashboard' && (
+            <div className="px-6 pt-4 pb-2 border-b border-white/5 flex items-center justify-between bg-white/[0.01]">
+              <button
+                onClick={() => setActiveTab('dashboard')}
+                className="flex items-center space-x-2 text-xs font-semibold text-stone-400 hover:text-blue-400 transition-colors"
+              >
+                <span>&larr; Back to Dashboard</span>
+                <span className="text-[10px] text-stone-600 font-mono">(Esc)</span>
+              </button>
+              <span className="text-xs font-mono text-stone-500 uppercase tracking-wider">
+                {activeTab === '3d-space' ? '3D Memory Space' : activeTab === 'list' ? 'Memory Catalog' : 'System Settings'}
+              </span>
+            </div>
+          )}
           <main className="flex-1 overflow-y-auto p-6 lg:p-8">
             {activeTab === 'dashboard' && <DashboardHome />}
             

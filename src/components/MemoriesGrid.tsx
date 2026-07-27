@@ -15,6 +15,7 @@ export default function MemoriesGrid() {
   const memories = useAppStore(state => state.memories);
   const selectedMemoryId = useAppStore(state => state.selectedMemoryId);
   const selectMemory = useAppStore(state => state.selectMemory);
+  const deleteMemory = useAppStore(state => state.deleteMemory);
   const setGraphFocus = useAppStore(state => state.setGraphFocus);
   const setActiveTab = useAppStore(state => state.setActiveTab);
 
@@ -231,16 +232,28 @@ export default function MemoriesGrid() {
                       {(m.confidence * 100).toFixed(0)}% OCR confidence
                     </span>
 
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        handleFocusGraph(m.id);
-                      }}
-                      className="flex items-center space-x-1.5 text-[10px] font-mono font-bold text-blue-400 hover:text-blue-300 transition duration-300 bg-blue-500/10 border border-blue-500/20 px-2.5 py-1 rounded cursor-pointer"
-                    >
-                      <Eye size={11} />
-                      <span>REPLAY SPACE</span>
-                    </button>
+                    <div className="flex items-center space-x-2">
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          deleteMemory(m.id);
+                        }}
+                        title="Delete Memory"
+                        className="p-1 rounded text-stone-500 hover:text-rose-400 hover:bg-rose-500/10 transition cursor-pointer"
+                      >
+                        <Trash2 size={13} />
+                      </button>
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleFocusGraph(m.id);
+                        }}
+                        className="flex items-center space-x-1.5 text-[10px] font-mono font-bold text-blue-400 hover:text-blue-300 transition duration-300 bg-blue-500/10 border border-blue-500/20 px-2.5 py-1 rounded cursor-pointer"
+                      >
+                        <Eye size={11} />
+                        <span>REPLAY SPACE</span>
+                      </button>
+                    </div>
                   </div>
                 </div>
               </div>

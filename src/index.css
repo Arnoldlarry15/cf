@@ -12,6 +12,13 @@
   }
 }
 
+/* Ensure parent containers allow scrolling when window shrinks */
+.app-layout-container {
+  min-height: 100vh;
+  overflow-y: auto;
+  overflow-x: hidden;
+}
+
 /* Custom Scrollbars */
 ::-webkit-scrollbar {
   width: 5px;

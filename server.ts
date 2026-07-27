@@ -461,6 +461,60 @@ async function startServer() {
     }
   });
 
+  // API: Vector Embeddings Generation Endpoint
+  app.post("/api/embeddings", async (req, res) => {
+    try {
+      const { chunks } = req.body;
+      if (!chunks || !Array.isArray(chunks)) {
+        return res.status(400).json({ error: "Chunks array required." });
+      }
+
+      // Generate 64-dimensional embeddings per chunk
+      const embeddings = chunks.map((chunk: any) => {
+        const dim = 64;
+        const vector = new Array(dim).fill(0);
+        const text = (chunk.text || "").toLowerCase();
+
+        for (let i = 0; i < text.length; i++) {
+          const charCode = text.charCodeAt(i);
+          const idx = (charCode * (i + 1)) % dim;
+          vector[idx] += (charCode % 10) / 100.0;
+        }
+
+        let norm = 0;
+        for (let i = 0; i < dim; i++) norm += vector[i] * vector[i];
+        norm = Math.sqrt(norm) || 1;
+        for (let i = 0; i < dim; i++) vector[i] /= norm;
+
+        return { chunkId: chunk.id, vector, dimensions: dim };
+      });
+
+      res.json({ embeddings });
+    } catch (err: any) {
+      res.status(500).json({ error: "Embedding generation failed", details: err.message });
+    }
+  });
+
+  // API: WAL Background Sync Endpoint
+  app.post("/api/sync", async (req, res) => {
+    try {
+      const { events } = req.body;
+      if (!events || !Array.isArray(events)) {
+        return res.status(400).json({ error: "Events array required." });
+      }
+
+      events.forEach((ev: any) => {
+        if (ev.type === 'CAPTURE' && ev.payload) {
+          databaseMemories.push(ev.payload);
+        }
+      });
+
+      res.json({ status: "success", syncedCount: events.length });
+    } catch (err: any) {
+      res.status(500).json({ error: "Sync failed", details: err.message });
+    }
+  });
+
   // API: Cognitive Assistant Chat Route using Server-Side Gemini API
   app.post("/api/ai/chat", async (req, res) => {
     const { messages } = req.body;

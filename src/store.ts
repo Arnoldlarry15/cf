@@ -1,5 +1,7 @@
 import { create } from 'zustand';
 import { Memory, ChatMessage } from './types';
+import { deleteMemoryLocal, updateMemoryLocal } from './services/storageEngine';
+import { WriteAheadLog } from './services/writeAheadLog';
 
 interface AppState {
   memories: Memory[];
@@ -35,6 +37,8 @@ interface AppState {
     tags: string[];
   }) => Promise<void>;
   setGraphFocus: (id: string | null) => void;
+  deleteMemory: (id: string) => Promise<void>;
+  updateMemory: (id: string, patch: Partial<Memory>) => Promise<void>;
   clearChat: () => void;
 }
 
@@ -203,6 +207,29 @@ export const useAppStore = create<AppState>((set, get) => ({
   },
 
   setGraphFocus: (id) => set({ activeGraphFocusId: id }),
+  deleteMemory: async (id) => {
+    try {
+      const updated = get().memories.filter(m => m.id !== id);
+      set({
+        memories: updated,
+        selectedMemoryId: get().selectedMemoryId === id ? null : get().selectedMemoryId
+      });
+      await deleteMemoryLocal(id);
+      WriteAheadLog.getInstance().append('DELETE_NODE', { deletedId: id });
+    } catch (e) {
+      console.error('[Store] Delete memory failed:', e);
+    }
+  },
+  updateMemory: async (id, patch) => {
+    try {
+      const updated = get().memories.map(m => m.id === id ? { ...m, ...patch } : m);
+      set({ memories: updated });
+      await updateMemoryLocal(id, patch);
+      WriteAheadLog.getInstance().append('UPDATE_NODE', { updatedId: id, patch });
+    } catch (e) {
+      console.error('[Store] Update memory failed:', e);
+    }
+  },
   clearChat: () => set({
     chatMessages: [
       {

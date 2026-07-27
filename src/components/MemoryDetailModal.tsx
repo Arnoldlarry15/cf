@@ -1,5 +1,5 @@
 import React, { useMemo } from 'react';
-import { X, Copy, Tag, Calendar, Monitor, Eye, Link, Layers, AlertCircle, History, Check } from 'lucide-react';
+import { X, Copy, Tag, Calendar, Monitor, Eye, Link, Layers, AlertCircle, History, Check, Trash2 } from 'lucide-react';
 import { useAppStore } from '../store';
 import { Memory } from '../types';
 
@@ -149,6 +149,7 @@ export default function MemoryDetailModal() {
   const selectedMemoryId = useAppStore(state => state.selectedMemoryId);
   const memories = useAppStore(state => state.memories);
   const selectMemory = useAppStore(state => state.selectMemory);
+  const deleteMemory = useAppStore(state => state.deleteMemory);
   const setGraphFocus = useAppStore(state => state.setGraphFocus);
 
   const [copied, setCopied] = React.useState(false);
@@ -192,12 +193,22 @@ export default function MemoryDetailModal() {
             {memory.application} Log
           </span>
         </div>
-        <button
-          onClick={() => selectMemory(null)}
-          className="p-1 rounded-lg hover:bg-white/5 text-stone-400 hover:text-stone-200 transition cursor-pointer"
-        >
-          <X size={16} />
-        </button>
+        <div className="flex items-center space-x-1">
+          <button
+            onClick={() => deleteMemory(memory.id)}
+            title="Delete Capture"
+            className="p-1 rounded-lg hover:bg-rose-500/20 text-stone-400 hover:text-rose-400 transition cursor-pointer"
+          >
+            <Trash2 size={15} />
+          </button>
+          <button
+            onClick={() => selectMemory(null)}
+            title="Close Inspector (Esc)"
+            className="p-1 rounded-lg hover:bg-white/5 text-stone-400 hover:text-stone-200 transition cursor-pointer"
+          >
+            <X size={16} />
+          </button>
+        </div>
       </div>
 
       {/* Content */}

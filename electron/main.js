@@ -193,8 +193,9 @@ function openDashboard() {
   }
 
   dashboardWindow = new BrowserWindow({
-    width: 1000,
-    height: 700,
+    width: 1280,
+    height: 800,
+    show: false,
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true,
@@ -203,6 +204,11 @@ function openDashboard() {
     },
     autoHideMenuBar: true,
     title: "CaptureFlow Dashboard"
+  });
+
+  dashboardWindow.maximize();
+  dashboardWindow.once('ready-to-show', () => {
+    if (dashboardWindow) dashboardWindow.show();
   });
 
   dashboardWindow.webContents.on('did-fail-load', (event, errorCode, errorDescription, validatedURL) => {

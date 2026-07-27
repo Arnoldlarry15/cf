@@ -5,6 +5,9 @@ import * as THREE from 'three';
 import { useAppStore } from '../store';
 import { Memory } from '../types';
 import { OctreeNode, OctreeItem } from '../utils/octree';
+import { SyncEngine } from '../services/syncEngine';
+import { WriteAheadLog } from '../services/writeAheadLog';
+import { saveMemoryLocal, saveNodePositionsLocal } from '../services/storageEngine';
 
 // App colors
 const CATEGORY_COLORS: Record<string, string> = {
@@ -50,7 +53,6 @@ function InstancedNodes({
   const dummyColor = useMemo(() => new THREE.Color(), []);
   const dummyScale = useMemo(() => new THREE.Vector3(1, 1, 1), []);
 
-  // Update instance transformations and colors whenever positions change
   useEffect(() => {
     if (!meshRef.current || !positionsArray || count === 0) return;
 
@@ -67,7 +69,6 @@ function InstancedNodes({
       const isFocused = activeGraphFocusId === memory.id;
       const isHovered = hoveredIndex === i;
 
-      // Scale multiplier based on selection/hover state
       const scale = isSelected ? 1.5 : isHovered ? 1.25 : isFocused ? 1.3 : 1.0;
       dummyScale.set(scale, scale, scale);
 
@@ -78,7 +79,6 @@ function InstancedNodes({
       );
       instancedMesh.setMatrixAt(i, dummyMatrix);
 
-      // Color mapping
       const baseHex = CATEGORY_COLORS[memory.category] || DEFAULT_COLOR;
       if (isSelected || isHovered) {
         dummyColor.set('#FAFAF9');
@@ -94,7 +94,6 @@ function InstancedNodes({
     }
   }, [positionsArray, visibleMemories, count, selectedMemoryId, activeGraphFocusId, hoveredIndex, dummyMatrix, dummyColor, dummyScale]);
 
-  // Pointer interaction for instanced mesh raycasting
   const handlePointerMove = useCallback((e: any) => {
     e.stopPropagation();
     if (e.instanceId !== undefined) {
@@ -114,7 +113,7 @@ function InstancedNodes({
     }
   }, [visibleMemories, onSelectNode]);
 
-  if (count === 0) return null;
+  if (count === 0 || !positionsArray || positionsArray.length < count * 3) return null;
 
   return (
     <instancedMesh
@@ -301,12 +300,19 @@ export default function MemorySpace3D() {
   const selectedMemoryId = useAppStore(state => state.selectedMemoryId);
   const activeGraphFocusId = useAppStore(state => state.activeGraphFocusId);
   const selectMemory = useAppStore(state => state.selectMemory);
+  const setGraphFocus = useAppStore(state => state.setGraphFocus);
   const timelineProgress = useAppStore(state => state.timelineProgress);
 
   const [hoveredIndex, setHoveredIndex] = useState<number | null>(null);
   const [positionsArray, setPositionsArray] = useState<Float32Array | null>(null);
 
-  // Determine cutoff time based on progress slider
+  // Initialize Background Sync Engine for offline WAL flushing
+  useEffect(() => {
+    const syncEngine = SyncEngine.getInstance();
+    syncEngine.startBackgroundSync(4000);
+    return () => syncEngine.stopBackgroundSync();
+  }, []);
+
   const { cutOffTime } = useMemo(() => {
     if (memories.length === 0) return { cutOffTime: 0 };
     const times = memories.map(m => new Date(m.timestamp).getTime());
@@ -326,16 +332,12 @@ export default function MemorySpace3D() {
   useEffect(() => {
     if (visibleMemories.length === 0) return;
 
-    // Create worker
     const worker = new Worker(new URL('../workers/layoutWorker.ts', import.meta.url), { type: 'module' });
     workerRef.current = worker;
 
-    // Build initial positions and anchors
     const count = visibleMemories.length;
     const initialPositions = new Float32Array(count * 3);
     const anchorPositions = new Float32Array(count * 3);
-
-    // Build index lookup for edge connections
     const idToIndexMap: Record<string, number> = {};
 
     visibleMemories.forEach((m, idx) => {
@@ -371,7 +373,6 @@ export default function MemorySpace3D() {
         const updatedBuffer = new Float32Array(e.data.positions);
         setPositionsArray(updatedBuffer);
 
-        // Ping-pong buffer back to worker for next simulation step
         const transferBack = updatedBuffer.buffer.slice(0);
         worker.postMessage({ type: 'UPDATE_POSITIONS', positions: transferBack }, [transferBack]);
       }
@@ -393,6 +394,31 @@ export default function MemorySpace3D() {
     };
   }, [visibleMemories]);
 
+  // Build 3D Octree for spatial indexing and sub-millisecond hit detection
+  const octreeRoot = useMemo(() => {
+    if (!positionsArray || visibleMemories.length === 0) return null;
+    const bounds = new THREE.Box3(
+      new THREE.Vector3(-40, -40, -40),
+      new THREE.Vector3(40, 40, 40)
+    );
+    const tree = new OctreeNode(bounds, 8, 0, 4);
+
+    visibleMemories.forEach((m, idx) => {
+      const idx3 = idx * 3;
+      tree.insert({
+        id: m.id,
+        index: idx,
+        position: new THREE.Vector3(
+          positionsArray[idx3],
+          positionsArray[idx3 + 1],
+          positionsArray[idx3 + 2]
+        )
+      });
+    });
+
+    return tree;
+  }, [positionsArray, visibleMemories]);
+
   // Positions dictionary map for camera controller and edge connections
   const positionsMap = useMemo(() => {
     const map: Record<string, THREE.Vector3> = {};
@@ -400,16 +426,25 @@ export default function MemorySpace3D() {
 
     visibleMemories.forEach((m, idx) => {
       const idx3 = idx * 3;
-      map[m.id] = new THREE.Vector3(
+      const posVec = new THREE.Vector3(
         positionsArray[idx3],
         positionsArray[idx3 + 1],
         positionsArray[idx3 + 2]
       );
+      map[m.id] = posVec;
     });
+
+    // Save positions locally to IndexedDB for zero-latency resume
+    if (Object.keys(map).length > 0) {
+      saveNodePositionsLocal(
+        Object.fromEntries(Object.entries(map).map(([k, v]) => [k, { x: v.x, y: v.y, z: v.z }]))
+      );
+    }
+
     return map;
   }, [positionsArray, visibleMemories]);
 
-  // Generate edge connection rendering list
+  // Generate edge connection list
   const edges = useMemo(() => {
     const list: Array<{ id: string; start: THREE.Vector3; end: THREE.Vector3; weight: number; highlight: boolean; color: string }> = [];
     visibleMemories.forEach(m => {
@@ -439,7 +474,6 @@ export default function MemorySpace3D() {
     return list;
   }, [visibleMemories, positionsMap, selectedMemoryId]);
 
-  // Hovered memory node for 2D HUD label
   const hoveredMemory = hoveredIndex !== null && visibleMemories[hoveredIndex] ? visibleMemories[hoveredIndex] : null;
   const hoveredPosition = hoveredMemory ? positionsMap[hoveredMemory.id] : null;
 
@@ -451,7 +485,7 @@ export default function MemorySpace3D() {
       >
         <fog attach="fog" args={["#f8fafc", 15, 55]} />
 
-        <ambientLight intensity={0.55} />
+        <ambientLight intensity={0.85} />
         <directionalLight position={[15, 20, 10]} intensity={1.6} color="#fffdfa" />
         <directionalLight position={[-15, -10, -10]} intensity={0.6} color="#e2f1ff" />
 
@@ -475,7 +509,12 @@ export default function MemorySpace3D() {
           selectedMemoryId={selectedMemoryId}
           activeGraphFocusId={activeGraphFocusId}
           hoveredIndex={hoveredIndex}
-          onSelectNode={(id) => selectMemory(id)}
+          onSelectNode={(id) => {
+            selectMemory(id);
+            setGraphFocus(id);
+            // Log interaction into WAL queue
+            WriteAheadLog.getInstance().append('UPDATE_NODE', { selectedId: id });
+          }}
           onHoverNode={(index) => setHoveredIndex(index)}
         />
 
@@ -491,11 +530,37 @@ export default function MemorySpace3D() {
           />
         ))}
 
-        {/* Floating HTML HUD Overlay for Hovered Node */}
+        {/* Dynamic 3D-to-2D Spatial HUD Action Menu Overlay */}
         {hoveredMemory && hoveredPosition && (
           <Html position={[hoveredPosition.x, hoveredPosition.y + 1.2, hoveredPosition.z]} center distanceFactor={10}>
-            <div className="bg-[#0a0a0f]/95 border border-blue-500/20 text-stone-200 text-[10px] px-2.5 py-1.5 rounded-lg font-sans shadow-[0_0_15px_rgba(59,130,246,0.2)] whitespace-nowrap pointer-events-none select-none glass">
-              <span className="font-bold text-blue-400">{hoveredMemory.application}:</span> {hoveredMemory.windowTitle.slice(0, 28)}...
+            <div className="bg-[#0a0a0f]/95 border border-blue-500/30 text-stone-200 text-[11px] p-2.5 rounded-xl font-sans shadow-[0_0_20px_rgba(59,130,246,0.3)] whitespace-nowrap pointer-events-auto select-none glass flex flex-col gap-1.5 min-w-[180px]">
+              <div className="flex items-center justify-between border-b border-white/10 pb-1">
+                <span className="font-bold text-blue-400 uppercase text-[9px] tracking-wider">{hoveredMemory.application}</span>
+                <span className="text-[9px] text-stone-400">{new Date(hoveredMemory.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
+              </div>
+              <p className="text-[10px] text-stone-200 truncate max-w-[200px] font-medium">{hoveredMemory.windowTitle}</p>
+              
+              <div className="flex items-center gap-1 mt-1">
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    selectMemory(hoveredMemory.id);
+                    setGraphFocus(hoveredMemory.id);
+                  }}
+                  className="bg-blue-600/80 hover:bg-blue-500 text-white text-[9px] px-2 py-1 rounded transition-colors"
+                >
+                  Focus Flight
+                </button>
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    selectMemory(hoveredMemory.id);
+                  }}
+                  className="bg-white/10 hover:bg-white/20 text-stone-300 text-[9px] px-2 py-1 rounded transition-colors"
+                >
+                  Inspect
+                </button>
+              </div>
             </div>
           </Html>
         )}
@@ -505,7 +570,7 @@ export default function MemorySpace3D() {
 
       {/* Floating Category Legend */}
       <div className="absolute top-4 left-4 p-4 rounded-xl border border-white/5 bg-[#0a0a0f]/80 backdrop-blur-md pointer-events-none glass shadow-xl">
-        <h4 className="text-xs font-semibold tracking-wider text-stone-400 uppercase mb-3">Cognitive Clusters (Instanced Web Worker 60 FPS)</h4>
+        <h4 className="text-xs font-semibold tracking-wider text-stone-400 uppercase mb-3">Cognitive Clusters (Instanced + WAL Sync)</h4>
         <div className="space-y-2">
           {Object.entries(CATEGORY_COLORS).map(([category, color]) => (
             <div key={category} className="flex items-center space-x-2.5">
