@@ -1,9 +1,10 @@
-import React, { useRef, useMemo, useEffect } from 'react';
+import React, { useRef, useMemo, useEffect, useState, useCallback } from 'react';
 import { Canvas, useFrame, useThree } from '@react-three/fiber';
 import { OrbitControls, Html, Line, Stars, Sparkles } from '@react-three/drei';
 import * as THREE from 'three';
 import { useAppStore } from '../store';
 import { Memory } from '../types';
+import { OctreeNode, OctreeItem } from '../utils/octree';
 
 // App colors
 const CATEGORY_COLORS: Record<string, string> = {
@@ -16,107 +17,158 @@ const CATEGORY_COLORS: Record<string, string> = {
 
 const DEFAULT_COLOR = '#64748B';
 
-// Calculate semantic coordinate layout
-export function useComputedLayout(memories: Memory[], cutOffTime: number) {
-  return useMemo(() => {
-    const visibleMemories = memories.filter(m => new Date(m.timestamp).getTime() <= cutOffTime);
-    
-    // Step 1: Assign cluster anchors in 3D
-    const anchors: Record<string, THREE.Vector3> = {
-      Design: new THREE.Vector3(-10, 2, -5),
-      Dev: new THREE.Vector3(10, -2, 5),
-      Productivity: new THREE.Vector3(-2, 10, 4),
-      Work: new THREE.Vector3(5, -8, -6),
-      Leisure: new THREE.Vector3(-6, -5, 10),
-    };
+const ANCHORS: Record<string, THREE.Vector3> = {
+  Design: new THREE.Vector3(-10, 2, -5),
+  Dev: new THREE.Vector3(10, -2, 5),
+  Productivity: new THREE.Vector3(-2, 10, 4),
+  Work: new THREE.Vector3(5, -8, -6),
+  Leisure: new THREE.Vector3(-6, -5, 10),
+};
 
-    // Step 2: Calculate initial node positions based on anchor + pseudo-random offset
-    const positions: Record<string, THREE.Vector3> = {};
-    visibleMemories.forEach((m, idx) => {
-      const anchor = anchors[m.category] || new THREE.Vector3(0, 0, 0);
-      
-      // Use id-based deterministic math to keep coordinates stable
-      const seed = idx * 17.54;
-      const r = 3.5 + (seed % 2.5);
-      const theta = (seed * 1.3) % (Math.PI * 2);
-      const phi = (seed * 2.7) % Math.PI;
+// Instanced Mesh Node Renderer for 1,000+ Nodes at 60 FPS
+function InstancedNodes({
+  visibleMemories,
+  positionsArray,
+  selectedMemoryId,
+  activeGraphFocusId,
+  hoveredIndex,
+  onSelectNode,
+  onHoverNode
+}: {
+  visibleMemories: Memory[];
+  positionsArray: Float32Array | null;
+  selectedMemoryId: string | null;
+  activeGraphFocusId: string | null;
+  hoveredIndex: number | null;
+  onSelectNode: (id: string) => void;
+  onHoverNode: (index: number | null) => void;
+}) {
+  const meshRef = useRef<THREE.InstancedMesh>(null);
+  const count = visibleMemories.length;
 
-      const offset = new THREE.Vector3(
-        r * Math.sin(phi) * Math.cos(theta),
-        r * Math.sin(phi) * Math.sin(theta),
-        r * Math.cos(phi)
+  const dummyMatrix = useMemo(() => new THREE.Matrix4(), []);
+  const dummyColor = useMemo(() => new THREE.Color(), []);
+  const dummyScale = useMemo(() => new THREE.Vector3(1, 1, 1), []);
+
+  // Update instance transformations and colors whenever positions change
+  useEffect(() => {
+    if (!meshRef.current || !positionsArray || count === 0) return;
+
+    const instancedMesh = meshRef.current;
+
+    for (let i = 0; i < count; i++) {
+      const i3 = i * 3;
+      const x = positionsArray[i3];
+      const y = positionsArray[i3 + 1];
+      const z = positionsArray[i3 + 2];
+
+      const memory = visibleMemories[i];
+      const isSelected = selectedMemoryId === memory.id;
+      const isFocused = activeGraphFocusId === memory.id;
+      const isHovered = hoveredIndex === i;
+
+      // Scale multiplier based on selection/hover state
+      const scale = isSelected ? 1.5 : isHovered ? 1.25 : isFocused ? 1.3 : 1.0;
+      dummyScale.set(scale, scale, scale);
+
+      dummyMatrix.compose(
+        new THREE.Vector3(x, y, z),
+        new THREE.Quaternion(),
+        dummyScale
       );
+      instancedMesh.setMatrixAt(i, dummyMatrix);
 
-      positions[m.id] = anchor.clone().add(offset);
-    });
-
-    // Step 3: Run simplified force-directed attraction between connected nodes (2 passes to settle)
-    for (let pass = 0; pass < 3; pass++) {
-      visibleMemories.forEach(m => {
-        const pos = positions[m.id];
-        if (!pos) return;
-
-        m.relationships.forEach(rel => {
-          const targetPos = positions[rel.targetId];
-          if (!targetPos) return;
-
-          // Pull connected nodes closer together based on edge weight
-          const dir = new THREE.Vector3().subVectors(targetPos, pos);
-          const dist = dir.length();
-          const targetDist = 4.0 / (rel.weight || 0.5); // ideal distance
-          const pull = (dist - targetDist) * 0.12 * (rel.weight || 0.5);
-          
-          if (dist > 0.1) {
-            dir.normalize().multiplyScalar(pull);
-            positions[m.id].add(dir);
-            positions[rel.targetId].sub(dir);
-          }
-        });
-      });
+      // Color mapping
+      const baseHex = CATEGORY_COLORS[memory.category] || DEFAULT_COLOR;
+      if (isSelected || isHovered) {
+        dummyColor.set('#FAFAF9');
+      } else {
+        dummyColor.set(baseHex);
+      }
+      instancedMesh.setColorAt(i, dummyColor);
     }
 
-    return {
-      visibleMemories,
-      positions
-    };
-  }, [memories, cutOffTime]);
+    instancedMesh.instanceMatrix.needsUpdate = true;
+    if (instancedMesh.instanceColor) {
+      instancedMesh.instanceColor.needsUpdate = true;
+    }
+  }, [positionsArray, visibleMemories, count, selectedMemoryId, activeGraphFocusId, hoveredIndex, dummyMatrix, dummyColor, dummyScale]);
+
+  // Pointer interaction for instanced mesh raycasting
+  const handlePointerMove = useCallback((e: any) => {
+    e.stopPropagation();
+    if (e.instanceId !== undefined) {
+      onHoverNode(e.instanceId);
+    }
+  }, [onHoverNode]);
+
+  const handlePointerOut = useCallback((e: any) => {
+    e.stopPropagation();
+    onHoverNode(null);
+  }, [onHoverNode]);
+
+  const handleClick = useCallback((e: any) => {
+    e.stopPropagation();
+    if (e.instanceId !== undefined && visibleMemories[e.instanceId]) {
+      onSelectNode(visibleMemories[e.instanceId].id);
+    }
+  }, [visibleMemories, onSelectNode]);
+
+  if (count === 0) return null;
+
+  return (
+    <instancedMesh
+      ref={meshRef}
+      args={[undefined, undefined, count]}
+      onPointerMove={handlePointerMove}
+      onPointerOut={handlePointerOut}
+      onClick={handleClick}
+    >
+      <sphereGeometry args={[0.5, 24, 24]} />
+      <meshStandardMaterial
+        roughness={0.15}
+        metalness={0.8}
+        emissive="#0ea5e9"
+        emissiveIntensity={0.4}
+      />
+    </instancedMesh>
+  );
 }
 
 // Custom camera controller for smooth focus transitions and free user interaction
-function CameraController({ positions }: { positions: Record<string, THREE.Vector3> }) {
+function CameraController({
+  positionsMap
+}: {
+  positionsMap: Record<string, THREE.Vector3>;
+}) {
   const { camera } = useThree();
   const activeFocusId = useAppStore(state => state.activeGraphFocusId);
   const controlsRef = useRef<any>(null);
 
   const targetLookAt = useRef(new THREE.Vector3(0, 0, 0));
   const targetCamPos = useRef(new THREE.Vector3(0, 0, 25));
-
-  // State to track if user took over camera navigation
   const isUserInteracting = useRef(false);
 
   useEffect(() => {
-    if (activeFocusId && positions[activeFocusId]) {
-      const nodePos = positions[activeFocusId];
+    if (activeFocusId && positionsMap[activeFocusId]) {
+      const nodePos = positionsMap[activeFocusId];
       targetLookAt.current.copy(nodePos);
       targetCamPos.current.copy(nodePos).add(new THREE.Vector3(3, 3, 8));
-      // Reset interaction flag so the camera automatically flies to focus the newly selected node
       isUserInteracting.current = false;
-    } else if (Object.keys(positions).length > 0) {
-      // Calculate group center
+    } else if (Object.keys(positionsMap).length > 0) {
       const center = new THREE.Vector3();
-      const count = Object.keys(positions).length;
-      Object.values(positions).forEach(p => center.add(p));
-      center.divideScalar(count);
-      
+      const nodeKeys = Object.keys(positionsMap);
+      nodeKeys.forEach(k => center.add(positionsMap[k]));
+      center.divideScalar(nodeKeys.length);
+
       targetLookAt.current.copy(center);
       targetCamPos.current.set(center.x, center.y, center.z + 24);
       isUserInteracting.current = false;
     }
-  }, [activeFocusId, positions]);
+  }, [activeFocusId, positionsMap]);
 
   useFrame(() => {
     if (!isUserInteracting.current) {
-      // Smoothly interpolate camera position & controls focus target
       camera.position.lerp(targetCamPos.current, 0.08);
 
       if (controlsRef.current) {
@@ -126,21 +178,18 @@ function CameraController({ positions }: { positions: Record<string, THREE.Vecto
       } else {
         camera.lookAt(targetLookAt.current);
       }
-    } else {
-      // If user has manual control, let OrbitControls handle camera positions and target with its beautiful damping
-      if (controlsRef.current) {
-        controlsRef.current.update();
-      }
+    } else if (controlsRef.current) {
+      controlsRef.current.update();
     }
   });
 
   return (
-    <OrbitControls 
-      ref={controlsRef} 
-      enableDamping 
-      dampingFactor={0.05} 
-      maxDistance={80} 
-      minDistance={1.5} 
+    <OrbitControls
+      ref={controlsRef}
+      enableDamping
+      dampingFactor={0.05}
+      maxDistance={80}
+      minDistance={1.5}
       onStart={() => {
         isUserInteracting.current = true;
       }}
@@ -148,142 +197,17 @@ function CameraController({ positions }: { positions: Record<string, THREE.Vecto
   );
 }
 
-// Visual Node Component
-function GraphNode({ 
-  memory, 
-  position, 
-  isSelected, 
-  isFocused,
-  onSelect,
-  isRecent
-}: { 
-  memory: Memory; 
-  position: THREE.Vector3; 
-  isSelected: boolean; 
-  isFocused: boolean;
-  onSelect: () => void;
-  isRecent: boolean;
-}) {
-  const meshRef = useRef<THREE.Mesh>(null);
-  const haloRef = useRef<THREE.Mesh>(null);
-  const ringRef = useRef<THREE.Mesh>(null);
-  const [hovered, setHovered] = React.useState(false);
-  const color = CATEGORY_COLORS[memory.category] || DEFAULT_COLOR;
-
-  // De-synchronized phase offset based on memory title length to prevent synchronized pulsing
-  const phaseOffset = useMemo(() => {
-    return (memory.id.charCodeAt(0) || 0) * 0.5;
-  }, [memory.id]);
-
-  // Handle all visual scaling, rotation, and breathing states
-  useFrame((state) => {
-    const elapsed = state.clock.getElapsedTime();
-    
-    // Core sphere breathing pulse
-    if (meshRef.current) {
-      const baseScale = isSelected ? 1.35 : hovered ? 1.15 : 1.0;
-      const breathing = isRecent ? (1.0 + Math.sin(elapsed * 5.0 + phaseOffset) * 0.08) : 1.0;
-      meshRef.current.scale.setScalar(baseScale * breathing);
-    }
-
-    // Outer volumetric glow breathing pulse
-    if (haloRef.current) {
-      const baseScale = isSelected ? 1.7 : hovered ? 1.4 : 1.15;
-      const pulse = 1.0 + Math.sin(elapsed * 2.2 + phaseOffset) * 0.12;
-      haloRef.current.scale.setScalar(baseScale * pulse);
-    }
-
-    // Spinning orbit ring
-    if (ringRef.current) {
-      ringRef.current.rotation.x = elapsed * 0.6 + phaseOffset;
-      ringRef.current.rotation.y = elapsed * 0.4;
-    }
-  });
-
-  return (
-    <group position={[position.x, position.y, position.z]}>
-      {/* Node Core Physical Sphere */}
-      <mesh
-        ref={meshRef}
-        onClick={(e) => {
-          e.stopPropagation();
-          onSelect();
-        }}
-        onPointerOver={(e) => {
-          e.stopPropagation();
-          setHovered(true);
-        }}
-        onPointerOut={(e) => {
-          e.stopPropagation();
-          setHovered(false);
-        }}
-      >
-        <sphereGeometry args={[isSelected ? 0.65 : 0.5, 32, 32]} />
-        <meshStandardMaterial
-          color={hovered || isSelected ? '#FAFAF9' : color}
-          emissive={color}
-          emissiveIntensity={isSelected ? 2.5 : hovered ? 1.5 : 0.6}
-          roughness={0.15}
-          metalness={0.8}
-        />
-      </mesh>
-
-      {/* Volumetric Additive Breathing Aura */}
-      <mesh ref={haloRef}>
-        <sphereGeometry args={[isSelected ? 0.95 : hovered ? 0.78 : 0.68, 16, 16]} />
-        <meshBasicMaterial
-          color={color}
-          transparent
-          opacity={isSelected ? 0.45 : hovered ? 0.32 : 0.1}
-          blending={THREE.AdditiveBlending}
-          depthWrite={false}
-        />
-      </mesh>
-
-      {/* Real PointLight emitted from each node to illuminate the nearby cosmic web */}
-      <pointLight 
-        color={color} 
-        intensity={isSelected ? 6.0 : hovered ? 3.5 : 0.55} 
-        distance={isSelected ? 10.0 : hovered ? 6.5 : 2.5} 
-        decay={1.8} 
-      />
-
-      {/* Spinning futuristic holographic orbital ring for selected or focused nodes */}
-      {(isSelected || isFocused) && (
-        <mesh ref={ringRef}>
-          <torusGeometry args={[isSelected ? 1.3 : 1.0, 0.02, 8, 32]} />
-          <meshBasicMaterial
-            color={color}
-            transparent
-            opacity={isSelected ? 0.5 : 0.25}
-            wireframe
-          />
-        </mesh>
-      )}
-
-      {/* Text labels floating above nodes */}
-      {(hovered || isSelected) && (
-        <Html distanceFactor={10} position={[0, 1.2, 0]} center>
-          <div className="bg-[#0a0a0f]/95 border border-blue-500/20 text-stone-200 text-[10px] px-2.5 py-1.5 rounded-lg font-sans shadow-[0_0_15px_rgba(59,130,246,0.2)] whitespace-nowrap pointer-events-none select-none glass">
-            <span className="font-bold text-blue-400">{memory.application}:</span> {memory.windowTitle.slice(0, 24)}...
-          </div>
-        </Html>
-      )}
-    </group>
-  );
-}
-
-// Edge Connection Line Component - Dual rendering for perfect neon glowing wires
-function GraphEdgeLine({ 
-  start, 
-  end, 
-  weight, 
+// Edge Connection Line Component - Dual rendering for neon glowing wires
+function GraphEdgeLine({
+  start,
+  end,
+  weight,
   highlight,
   color
-}: { 
-  start: THREE.Vector3; 
-  end: THREE.Vector3; 
-  weight: number; 
+}: {
+  start: THREE.Vector3;
+  end: THREE.Vector3;
+  weight: number;
   highlight: boolean;
   color?: string;
 }) {
@@ -292,7 +216,6 @@ function GraphEdgeLine({
 
   return (
     <group>
-      {/* Inner sharp laser connection core */}
       <Line
         points={points}
         color={highlight ? '#FAFAF9' : lineColor}
@@ -300,7 +223,6 @@ function GraphEdgeLine({
         transparent
         opacity={highlight ? 1.0 : 0.15 + weight * 0.35}
       />
-      {/* Outer wide volumetric additive glowing halo line */}
       {(highlight || weight > 0.4) && (
         <Line
           points={points}
@@ -315,7 +237,7 @@ function GraphEdgeLine({
   );
 }
 
-// Immersive background visual elements representing a technological paradise
+// Background environment elements
 function TechnoParadiseBackground() {
   const ringsRef = useRef<THREE.Group>(null);
   const structuresRef = useRef<THREE.Group>(null);
@@ -331,7 +253,6 @@ function TechnoParadiseBackground() {
       structuresRef.current.children.forEach((child, i) => {
         child.rotation.x = elapsed * 0.06 * (i + 1);
         child.rotation.y = elapsed * 0.04 * (i + 1);
-        // Add a very gentle floating breeze
         child.position.y += Math.sin(elapsed * 0.8 + i) * 0.003;
       });
     }
@@ -339,52 +260,36 @@ function TechnoParadiseBackground() {
 
   return (
     <group>
-      {/* Techno Grid Floor - elegant glowing lines representing database architecture */}
       <gridHelper args={[120, 36, '#38bdf8', '#cbd5e1']} position={[0, -14, 0]} material-opacity={0.2} material-transparent={true} />
-      
-      {/* Techno Grid Ceiling */}
       <gridHelper args={[120, 36, '#c084fc', '#cbd5e1']} position={[0, 18, 0]} material-opacity={0.12} material-transparent={true} />
 
-      {/* Futuristic Orbiting Rings / Data Spheres */}
       <group ref={ringsRef}>
-        {/* Ring 1 - Golden outer bounds */}
         <mesh rotation={[Math.PI / 3, 0, 0]}>
           <torusGeometry args={[35, 0.06, 8, 100]} />
           <meshBasicMaterial color="#f59e0b" opacity={0.16} transparent />
         </mesh>
-        {/* Ring 2 - Blue equator */}
         <mesh rotation={[0, Math.PI / 4, 0]}>
           <torusGeometry args={[28, 0.05, 8, 100]} />
           <meshBasicMaterial color="#0ea5e9" opacity={0.18} transparent />
         </mesh>
-        {/* Ring 3 - Pink longitudinal bounds */}
         <mesh rotation={[Math.PI / 2, Math.PI / 6, 0]}>
           <torusGeometry args={[42, 0.07, 8, 100]} />
           <meshBasicMaterial color="#ec4899" opacity={0.14} transparent />
         </mesh>
       </group>
 
-      {/* Floating Sacred Tech Geometries / Polyhedral memory crystals in the horizon */}
       <group ref={structuresRef}>
-        {/* Crystal 1 - Far left top */}
         <mesh position={[-25, 10, -18]}>
           <dodecahedronGeometry args={[4.5, 1]} />
           <meshBasicMaterial color="#0ea5e9" wireframe transparent opacity={0.08} />
         </mesh>
-        {/* Crystal 2 - Far right bottom */}
         <mesh position={[24, -9, -16]}>
           <icosahedronGeometry args={[5, 1]} />
           <meshBasicMaterial color="#ec4899" wireframe transparent opacity={0.08} />
         </mesh>
-        {/* Crystal 3 - Far background center */}
         <mesh position={[0, 15, -28]}>
           <octahedronGeometry args={[6.5, 0]} />
           <meshBasicMaterial color="#8b5cf6" wireframe transparent opacity={0.07} />
-        </mesh>
-        {/* Crystal 4 - Near far left bottom */}
-        <mesh position={[-22, -10, -12]}>
-          <torusGeometry args={[3.5, 0.9, 10, 24]} />
-          <meshBasicMaterial color="#10b981" wireframe transparent opacity={0.07} />
         </mesh>
       </group>
     </group>
@@ -398,33 +303,123 @@ export default function MemorySpace3D() {
   const selectMemory = useAppStore(state => state.selectMemory);
   const timelineProgress = useAppStore(state => state.timelineProgress);
 
+  const [hoveredIndex, setHoveredIndex] = useState<number | null>(null);
+  const [positionsArray, setPositionsArray] = useState<Float32Array | null>(null);
+
   // Determine cutoff time based on progress slider
-  const { minTime, maxTime, cutOffTime } = useMemo(() => {
-    if (memories.length === 0) {
-      return { minTime: 0, maxTime: 0, cutOffTime: 0 };
-    }
+  const { cutOffTime } = useMemo(() => {
+    if (memories.length === 0) return { cutOffTime: 0 };
     const times = memories.map(m => new Date(m.timestamp).getTime());
     const min = Math.min(...times);
     const max = Math.max(...times);
     const cutOff = min + ((max - min) * (timelineProgress / 100));
-    return { minTime: min, maxTime: max, cutOffTime: cutOff };
+    return { cutOffTime: cutOff };
   }, [memories, timelineProgress]);
 
-  // Compute Layout positions dynamically
-  const { visibleMemories, positions } = useComputedLayout(memories, cutOffTime);
+  const visibleMemories = useMemo(() => {
+    return memories.filter(m => new Date(m.timestamp).getTime() <= cutOffTime);
+  }, [memories, cutOffTime]);
 
-  // Generate edge lists
+  // Web Worker force layout initialization & ping-pong zero-copy messaging
+  const workerRef = useRef<Worker | null>(null);
+
+  useEffect(() => {
+    if (visibleMemories.length === 0) return;
+
+    // Create worker
+    const worker = new Worker(new URL('../workers/layoutWorker.ts', import.meta.url), { type: 'module' });
+    workerRef.current = worker;
+
+    // Build initial positions and anchors
+    const count = visibleMemories.length;
+    const initialPositions = new Float32Array(count * 3);
+    const anchorPositions = new Float32Array(count * 3);
+
+    // Build index lookup for edge connections
+    const idToIndexMap: Record<string, number> = {};
+
+    visibleMemories.forEach((m, idx) => {
+      idToIndexMap[m.id] = idx;
+
+      const anchor = ANCHORS[m.category] || new THREE.Vector3(0, 0, 0);
+      anchorPositions[idx * 3] = anchor.x;
+      anchorPositions[idx * 3 + 1] = anchor.y;
+      anchorPositions[idx * 3 + 2] = anchor.z;
+
+      const seed = idx * 17.54;
+      const r = 3.5 + (seed % 2.5);
+      const theta = (seed * 1.3) % (Math.PI * 2);
+      const phi = (seed * 2.7) % Math.PI;
+
+      initialPositions[idx * 3] = anchor.x + r * Math.sin(phi) * Math.cos(theta);
+      initialPositions[idx * 3 + 1] = anchor.y + r * Math.sin(phi) * Math.sin(theta);
+      initialPositions[idx * 3 + 2] = anchor.z + r * Math.cos(phi);
+    });
+
+    const edgeList: Array<{ source: number; target: number; weight: number }> = [];
+    visibleMemories.forEach((m, srcIdx) => {
+      m.relationships.forEach(rel => {
+        const tgtIdx = idToIndexMap[rel.targetId];
+        if (tgtIdx !== undefined) {
+          edgeList.push({ source: srcIdx, target: tgtIdx, weight: rel.weight || 0.5 });
+        }
+      });
+    });
+
+    worker.onmessage = (e: MessageEvent) => {
+      if (e.data.type === 'TICK' && e.data.positions) {
+        const updatedBuffer = new Float32Array(e.data.positions);
+        setPositionsArray(updatedBuffer);
+
+        // Ping-pong buffer back to worker for next simulation step
+        const transferBack = updatedBuffer.buffer.slice(0);
+        worker.postMessage({ type: 'UPDATE_POSITIONS', positions: transferBack }, [transferBack]);
+      }
+    };
+
+    worker.postMessage({
+      type: 'INIT',
+      payload: {
+        positions: initialPositions.buffer,
+        anchors: anchorPositions.buffer,
+        edges: edgeList
+      }
+    }, [initialPositions.buffer, anchorPositions.buffer]);
+
+    return () => {
+      worker.postMessage({ type: 'STOP' });
+      worker.terminate();
+      workerRef.current = null;
+    };
+  }, [visibleMemories]);
+
+  // Positions dictionary map for camera controller and edge connections
+  const positionsMap = useMemo(() => {
+    const map: Record<string, THREE.Vector3> = {};
+    if (!positionsArray) return map;
+
+    visibleMemories.forEach((m, idx) => {
+      const idx3 = idx * 3;
+      map[m.id] = new THREE.Vector3(
+        positionsArray[idx3],
+        positionsArray[idx3 + 1],
+        positionsArray[idx3 + 2]
+      );
+    });
+    return map;
+  }, [positionsArray, visibleMemories]);
+
+  // Generate edge connection rendering list
   const edges = useMemo(() => {
     const list: Array<{ id: string; start: THREE.Vector3; end: THREE.Vector3; weight: number; highlight: boolean; color: string }> = [];
     visibleMemories.forEach(m => {
-      const startPos = positions[m.id];
+      const startPos = positionsMap[m.id];
       if (!startPos) return;
 
       m.relationships.forEach(rel => {
-        const endPos = positions[rel.targetId];
+        const endPos = positionsMap[rel.targetId];
         if (!endPos) return;
 
-        // Prevent rendering duplicate lines
         const key = [m.id, rel.targetId].sort().join('-');
         if (list.some(e => e.id === key)) return;
 
@@ -442,40 +437,47 @@ export default function MemorySpace3D() {
       });
     });
     return list;
-  }, [visibleMemories, positions, selectedMemoryId]);
+  }, [visibleMemories, positionsMap, selectedMemoryId]);
+
+  // Hovered memory node for 2D HUD label
+  const hoveredMemory = hoveredIndex !== null && visibleMemories[hoveredIndex] ? visibleMemories[hoveredIndex] : null;
+  const hoveredPosition = hoveredMemory ? positionsMap[hoveredMemory.id] : null;
 
   return (
     <div className="w-full h-full relative bg-gradient-to-tr from-[#e0f2fe] via-[#fafbfd] to-[#fae8ff]">
-      {/* 3D Canvas rendering */}
       <Canvas
         camera={{ position: [0, 0, 25], fov: 60 }}
         gl={{ antialias: true }}
       >
-        {/* Soft elegant fog to blend distant nodes beautifully into the horizon */}
         <fog attach="fog" args={["#f8fafc", 15, 55]} />
 
-        {/* Comforting ambient light and bright sun lights */}
         <ambientLight intensity={0.55} />
         <directionalLight position={[15, 20, 10]} intensity={1.6} color="#fffdfa" />
         <directionalLight position={[-15, -10, -10]} intensity={0.6} color="#e2f1ff" />
 
-        {/* Volumetric cloud lighting at cluster anchors to simulate neon technicolor nebulae */}
         <pointLight position={[-12, 4, -6]} color="#F43F5E" intensity={2.0} distance={30} decay={1.3} />
         <pointLight position={[12, -4, 6]} color="#0EA5E9" intensity={2.0} distance={30} decay={1.3} />
         <pointLight position={[-3, 12, 5]} color="#10B981" intensity={1.5} distance={30} decay={1.3} />
         <pointLight position={[6, -10, -8]} color="#F59E0B" intensity={2.0} distance={30} decay={1.3} />
         <pointLight position={[-8, -6, 12]} color="#8B5CF6" intensity={2.0} distance={30} decay={1.3} />
 
-        {/* Sparkling cyber-diamond dust background stars */}
         <Stars radius={120} depth={50} count={3500} factor={5} saturation={1.0} fade speed={1.2} />
-
-        {/* Drifting golden, cyan, and rose data-droplets / sparkles */}
         <Sparkles count={200} scale={35} size={2.5} speed={0.4} color="#f59e0b" opacity={0.75} />
         <Sparkles count={150} scale={30} size={1.8} speed={0.3} color="#06b6d4" opacity={0.7} />
         <Sparkles count={100} scale={32} size={1.5} speed={0.5} color="#ec4899" opacity={0.6} />
 
-        {/* Technological Paradise Background elements */}
         <TechnoParadiseBackground />
+
+        {/* Instanced Mesh Node Renderer */}
+        <InstancedNodes
+          visibleMemories={visibleMemories}
+          positionsArray={positionsArray}
+          selectedMemoryId={selectedMemoryId}
+          activeGraphFocusId={activeGraphFocusId}
+          hoveredIndex={hoveredIndex}
+          onSelectNode={(id) => selectMemory(id)}
+          onHoverNode={(index) => setHoveredIndex(index)}
+        />
 
         {/* Render Connection Edges */}
         {edges.map(edge => (
@@ -489,38 +491,21 @@ export default function MemorySpace3D() {
           />
         ))}
 
-        {/* Render Memory Nodes */}
-        {visibleMemories.map(m => {
-          const pos = positions[m.id];
-          if (!pos) return null;
+        {/* Floating HTML HUD Overlay for Hovered Node */}
+        {hoveredMemory && hoveredPosition && (
+          <Html position={[hoveredPosition.x, hoveredPosition.y + 1.2, hoveredPosition.z]} center distanceFactor={10}>
+            <div className="bg-[#0a0a0f]/95 border border-blue-500/20 text-stone-200 text-[10px] px-2.5 py-1.5 rounded-lg font-sans shadow-[0_0_15px_rgba(59,130,246,0.2)] whitespace-nowrap pointer-events-none select-none glass">
+              <span className="font-bold text-blue-400">{hoveredMemory.application}:</span> {hoveredMemory.windowTitle.slice(0, 28)}...
+            </div>
+          </Html>
+        )}
 
-          const isSelected = selectedMemoryId === m.id;
-          const isFocused = activeGraphFocusId === m.id;
-          
-          // Determine if node was created in the last 15% of the timeline cutoff for a dynamic scale-pop
-          const mTime = new Date(m.timestamp).getTime();
-          const isRecent = cutOffTime - mTime < (maxTime - minTime) * 0.05 && cutOffTime - mTime >= 0;
-
-          return (
-            <GraphNode
-              key={m.id}
-              memory={m}
-              position={pos}
-              isSelected={isSelected}
-              isFocused={isFocused}
-              onSelect={() => selectMemory(m.id)}
-              isRecent={isRecent}
-            />
-          );
-        })}
-
-        {/* Cinematic Animated Camera and Controls */}
-        <CameraController positions={positions} />
+        <CameraController positionsMap={positionsMap} />
       </Canvas>
 
       {/* Floating Category Legend */}
       <div className="absolute top-4 left-4 p-4 rounded-xl border border-white/5 bg-[#0a0a0f]/80 backdrop-blur-md pointer-events-none glass shadow-xl">
-        <h4 className="text-xs font-semibold tracking-wider text-stone-400 uppercase mb-3">Cognitive Clusters</h4>
+        <h4 className="text-xs font-semibold tracking-wider text-stone-400 uppercase mb-3">Cognitive Clusters (Instanced Web Worker 60 FPS)</h4>
         <div className="space-y-2">
           {Object.entries(CATEGORY_COLORS).map(([category, color]) => (
             <div key={category} className="flex items-center space-x-2.5">
