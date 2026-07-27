@@ -25,6 +25,10 @@ process.on('unhandledRejection', (reason, promise) => {
 const gotTheLock = app.requestSingleInstanceLock();
 if (!gotTheLock) {
   app.quit();
+} else {
+  app.on('second-instance', () => {
+    openDashboard();
+  });
 }
 
 // Instantiate core modular services
@@ -120,7 +124,13 @@ function registerShortcuts() {
 }
 
 async function startSnipping() {
-  if (snipperWindow) return;
+  if (snipperWindow) {
+    try {
+      if (snipperWindow.isMinimized()) snipperWindow.restore();
+      snipperWindow.focus();
+    } catch (e) {}
+    return;
+  }
 
   try {
     const screenshotDataUrl = await captureService.capturePrimaryDisplay();
@@ -148,17 +158,30 @@ async function startSnipping() {
     });
 
     snipperWindow.setFullScreen(true);
-    snipperWindow.loadFile(path.join(__dirname, '../src/snipper/index.html'));
-
-    snipperWindow.webContents.on('did-finish-load', () => {
-      snipperWindow.webContents.send('start-snipping', screenshotDataUrl);
-    });
 
     snipperWindow.on('closed', () => {
       snipperWindow = null;
     });
+
+    snipperWindow.webContents.on('did-finish-load', () => {
+      if (snipperWindow && !snipperWindow.isDestroyed()) {
+        snipperWindow.webContents.send('start-snipping', screenshotDataUrl);
+      }
+    });
+
+    await snipperWindow.loadFile(path.join(__dirname, '../src/snipper/index.html'));
+
+    if (snipperWindow && !snipperWindow.isDestroyed() && !snipperWindow.webContents.isLoading()) {
+      snipperWindow.webContents.send('start-snipping', screenshotDataUrl);
+    }
   } catch (err) {
     console.error('Failed to start snipping overlay:', err);
+    if (snipperWindow) {
+      try {
+        snipperWindow.close();
+      } catch (e) {}
+      snipperWindow = null;
+    }
   }
 }
 
@@ -182,8 +205,12 @@ function openDashboard() {
     title: "CaptureFlow Dashboard"
   });
 
-  const isDev = !app.isPackaged;
-  const startUrl = process.env.ELECTRON_START_URL || (isDev ? 'http://localhost:3000' : null);
+  dashboardWindow.webContents.on('did-fail-load', (event, errorCode, errorDescription, validatedURL) => {
+    console.warn(`Failed to load ${validatedURL} (${errorCode}: ${errorDescription}). Falling back to local dashboard.`);
+    loadLocalDashboard();
+  });
+
+  const startUrl = process.env.ELECTRON_START_URL;
 
   if (startUrl) {
     dashboardWindow.loadURL(startUrl).catch((err) => {

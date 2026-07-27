@@ -1,6 +1,6 @@
 const { contextBridge, ipcRenderer } = require('electron');
 
-contextBridge.exposeInMainWorld('captureflow', {
+const api = {
   version: '1.0',
   capabilities: {
     ai: true,
@@ -45,4 +45,8 @@ contextBridge.exposeInMainWorld('captureflow', {
   ai: {
     chat: (messages) => ipcRenderer.invoke('ai-chat', messages)
   }
-});
+};
+
+contextBridge.exposeInMainWorld('captureflow', api);
+contextBridge.exposeInMainWorld('electronAPI', api);
+
