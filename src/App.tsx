@@ -22,20 +22,20 @@ export default function App() {
   // Split-panel right sidebar tabs: 'assistant' or 'inspector'
   const [rightTab, setRightTab] = useState<'assistant' | 'inspector'>('assistant');
 
-  // Global Escape key listener to exit modals or step back to dashboard
+  // Global Escape key listener using capture phase to catch Esc before inner inputs swallow it
   useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
+    const handleGlobalKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
-        if (selectedMemoryId) {
-          selectMemory(null);
-        } else if (activeTab !== 'dashboard') {
-          setActiveTab('dashboard');
-        }
+        e.stopPropagation();
+        // Force return to default dashboard state and clear selected node
+        setActiveTab('dashboard');
+        selectMemory(null);
       }
     };
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [selectedMemoryId, activeTab, selectMemory, setActiveTab]);
+
+    window.addEventListener('keydown', handleGlobalKeyDown, true);
+    return () => window.removeEventListener('keydown', handleGlobalKeyDown, true);
+  }, [setActiveTab, selectMemory]);
 
   // Trigger initial database fetch and subscribe to Electron updates
   useEffect(() => {
@@ -58,42 +58,53 @@ export default function App() {
   return (
     <div className="w-screen h-screen overflow-hidden bg-[#050507] graph-bg text-[#e0e0e0] font-sans flex select-none">
       {/* 12-Column Layout */}
-      <div className="flex-1 flex h-full">
+      <div className="flex-1 flex h-full relative">
         {/* Left Side Sidebar (Width: 256px / 64) */}
         <Sidebar />
 
         {/* Center Main Workspace (Flexible) */}
-        <div className="flex-1 flex flex-col min-w-0 h-full overflow-hidden">
+        <div className="flex-1 flex flex-col min-w-0 h-full overflow-hidden relative">
+          {/* Global Header / Back Button */}
           {activeTab !== 'dashboard' && (
-            <div className="px-6 pt-4 pb-2 border-b border-white/5 flex items-center justify-between bg-white/[0.01]">
+            <header className="px-6 pt-4 pb-2 border-b border-white/5 flex items-center justify-between bg-[#050507]/90 backdrop-blur-md z-30 relative shrink-0">
               <button
-                onClick={() => setActiveTab('dashboard')}
-                className="flex items-center space-x-2 text-xs font-semibold text-stone-400 hover:text-blue-400 transition-colors"
+                onClick={() => {
+                  setActiveTab('dashboard');
+                  selectMemory(null);
+                }}
+                className="flex items-center space-x-2 text-xs font-semibold text-stone-400 hover:text-blue-400 transition-colors cursor-pointer"
               >
                 <span>&larr; Back to Dashboard</span>
-                <span className="text-[10px] text-stone-600 font-mono">(Esc)</span>
+                <kbd className="px-1.5 py-0.5 text-[10px] bg-stone-800 rounded border border-stone-700 text-stone-400 font-mono">Esc</kbd>
               </button>
               <span className="text-xs font-mono text-stone-500 uppercase tracking-wider">
                 {activeTab === '3d-space' ? '3D Memory Space' : activeTab === 'list' ? 'Memory Catalog' : 'System Settings'}
               </span>
-            </div>
+            </header>
           )}
-          <main className="flex-1 overflow-y-auto p-6 lg:p-8">
-            {activeTab === 'dashboard' && <DashboardHome />}
-            
-            {activeTab === '3d-space' && (
-              <div className="w-full h-full flex flex-col space-y-4">
-                <div className="flex-1 rounded-2xl overflow-hidden border border-white/5 relative min-h-[400px] glass shadow-2xl">
-                  <MemorySpace3D />
-                </div>
-                {/* Timeline scrubbing controller */}
-                <TimelineScrubber />
+
+          <main className="flex-1 relative min-h-0 overflow-hidden">
+            {/* 1. Persistent 3D Canvas Layer - Never unmounts! */}
+            <div
+              className={`absolute inset-0 p-6 lg:p-8 flex flex-col space-y-4 transition-opacity duration-300 ${
+                activeTab === '3d-space' ? 'opacity-100 pointer-events-auto z-10' : 'opacity-0 pointer-events-none z-0'
+              }`}
+            >
+              <div className="flex-1 rounded-2xl overflow-hidden border border-white/5 relative min-h-[400px] glass shadow-2xl">
+                <MemorySpace3D />
+              </div>
+              {/* Timeline scrubbing controller */}
+              <TimelineScrubber />
+            </div>
+
+            {/* 2. Sub-View Panels - Rendered over canvas in high z-index container when active */}
+            {activeTab !== '3d-space' && (
+              <div className="absolute inset-0 z-20 overflow-y-auto pointer-events-auto bg-[#050507]/95 p-6 lg:p-8">
+                {activeTab === 'dashboard' && <DashboardHome />}
+                {activeTab === 'list' && <MemoriesGrid />}
+                {activeTab === 'settings' && <SettingsView />}
               </div>
             )}
-
-            {activeTab === 'list' && <MemoriesGrid />}
-
-            {activeTab === 'settings' && <SettingsView />}
           </main>
         </div>
 

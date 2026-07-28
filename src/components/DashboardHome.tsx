@@ -101,7 +101,7 @@ export default function DashboardHome() {
   };
 
   return (
-    <div className="space-y-8 max-w-6xl mx-auto pb-10">
+    <div className="w-full h-full min-h-full text-[#FAFAF9] space-y-8 max-w-6xl mx-auto pb-10 flex flex-col z-20">
       {/* Search Header Container */}
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-6 border-b border-white/5 pb-8">
         <div>

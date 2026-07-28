@@ -23,7 +23,7 @@ export default function SettingsView() {
   };
 
   return (
-    <div className="max-w-4xl mx-auto space-y-8 pb-10">
+    <div className="w-full h-full min-h-full text-[#FAFAF9] max-w-4xl mx-auto space-y-8 pb-10 flex flex-col z-20">
       <div className="border-b border-white/5 pb-6">
         <h1 className="text-2xl font-bold tracking-tight text-[#FAFAF9] flex items-center space-x-2.5 font-display">
           <Settings className="text-blue-400" />

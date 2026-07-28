@@ -78,7 +78,7 @@ export default function MemoriesGrid() {
   };
 
   return (
-    <div className="max-w-6xl mx-auto space-y-6 pb-10">
+    <div className="w-full h-full min-h-full text-[#FAFAF9] max-w-6xl mx-auto space-y-6 pb-10 flex flex-col z-20">
       {/* Search and Filters Header */}
       <div className="flex flex-col lg:flex-row gap-4 justify-between items-start lg:items-center border-b border-white/5 pb-6">
         <div>
