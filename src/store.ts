@@ -67,16 +67,19 @@ export const useAppStore = create<AppState>((set, get) => ({
     try {
       if (window.captureflow) {
         const data = await window.captureflow.snippets.get();
-        set({ memories: data });
+        set({ memories: Array.isArray(data) ? data : [] });
       } else {
         const res = await fetch('/api/memories');
         if (res.ok) {
           const data = await res.json();
-          set({ memories: data });
+          set({ memories: Array.isArray(data) ? data : [] });
+        } else {
+          set({ memories: [] });
         }
       }
     } catch (err) {
       console.error("Error fetching memories:", err);
+      set({ memories: [] });
     }
   },
 
@@ -209,7 +212,8 @@ export const useAppStore = create<AppState>((set, get) => ({
   setGraphFocus: (id) => set({ activeGraphFocusId: id }),
   deleteMemory: async (id) => {
     try {
-      const updated = get().memories.filter(m => m.id !== id);
+      const current = get().memories || [];
+      const updated = current.filter(m => m && m.id !== id);
       set({
         memories: updated,
         selectedMemoryId: get().selectedMemoryId === id ? null : get().selectedMemoryId
@@ -222,7 +226,8 @@ export const useAppStore = create<AppState>((set, get) => ({
   },
   updateMemory: async (id, patch) => {
     try {
-      const updated = get().memories.map(m => m.id === id ? { ...m, ...patch } : m);
+      const current = get().memories || [];
+      const updated = current.map(m => m && m.id === id ? { ...m, ...patch } : m);
       set({ memories: updated });
       await updateMemoryLocal(id, patch);
       WriteAheadLog.getInstance().append('UPDATE_NODE', { updatedId: id, patch });

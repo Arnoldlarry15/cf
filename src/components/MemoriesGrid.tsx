@@ -30,17 +30,17 @@ export default function MemoriesGrid() {
 
   // Filter memories list based on all active parameters
   const filteredMemories = useMemo(() => {
-    let list = [...memories];
+    let list = [...(memories || [])].filter(Boolean);
 
     // Text search (fuzzy OCR check)
     if (searchQuery.trim()) {
       const q = searchQuery.toLowerCase();
       list = list.filter(m => 
-        m.ocrText.toLowerCase().includes(q) ||
-        m.windowTitle.toLowerCase().includes(q) ||
-        m.application.toLowerCase().includes(q) ||
-        m.summary.toLowerCase().includes(q) ||
-        m.tags.some(t => t.toLowerCase().includes(q))
+        (m.ocrText || '').toLowerCase().includes(q) ||
+        (m.windowTitle || '').toLowerCase().includes(q) ||
+        (m.application || '').toLowerCase().includes(q) ||
+        (m.summary || '').toLowerCase().includes(q) ||
+        (m.tags || []).some(t => (t || '').toLowerCase().includes(q))
       );
     }
 
@@ -51,16 +51,16 @@ export default function MemoriesGrid() {
 
     // Confidence filter
     if (minConfidence > 0) {
-      list = list.filter(m => m.confidence >= minConfidence);
+      list = list.filter(m => (m.confidence || 0) >= minConfidence);
     }
 
     // Sort order
     if (sortOrder === 'newest') {
-      list.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
+      list.sort((a, b) => new Date(b.timestamp || 0).getTime() - new Date(a.timestamp || 0).getTime());
     } else if (sortOrder === 'oldest') {
-      list.sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime());
+      list.sort((a, b) => new Date(a.timestamp || 0).getTime() - new Date(b.timestamp || 0).getTime());
     } else if (sortOrder === 'confidence') {
-      list.sort((a, b) => b.confidence - a.confidence);
+      list.sort((a, b) => (b.confidence || 0) - (a.confidence || 0));
     }
 
     return list;

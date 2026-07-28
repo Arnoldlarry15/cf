@@ -41,16 +41,17 @@ export default function DashboardHome() {
 
   // Compute stats
   const stats = useMemo(() => {
-    if (memories.length === 0) return { total: 0, confidence: 0, appsCount: 0, uniqueTags: 0 };
+    const list = memories || [];
+    if (list.length === 0) return { total: 0, confidence: 0, appsCount: 0, uniqueTags: 0 };
     
-    const confidenceSum = memories.reduce((acc, m) => acc + m.confidence, 0);
-    const uniqueApps = new Set(memories.map(m => m.application));
-    const allTags = memories.flatMap(m => m.tags);
+    const confidenceSum = list.reduce((acc, m) => acc + (m?.confidence || 0), 0);
+    const uniqueApps = new Set(list.map(m => m?.application || 'Unknown'));
+    const allTags = list.flatMap(m => m?.tags || []);
     const uniqueTags = new Set(allTags);
 
     return {
-      total: memories.length,
-      confidence: (confidenceSum / memories.length) * 100,
+      total: list.length,
+      confidence: (confidenceSum / list.length) * 100,
       appsCount: uniqueApps.size,
       uniqueTags: uniqueTags.size,
     };
@@ -59,15 +60,16 @@ export default function DashboardHome() {
   // Group by Category counts
   const categoryCounts = useMemo(() => {
     const counts: Record<string, number> = { Design: 0, Dev: 0, Productivity: 0, Work: 0, Leisure: 0 };
-    memories.forEach(m => {
-      if (counts[m.category] !== undefined) counts[m.category]++;
+    (memories || []).forEach(m => {
+      if (m && m.category && counts[m.category] !== undefined) counts[m.category]++;
     });
     return counts;
   }, [memories]);
 
-  // Extract recent memory cards (first 3 by timestamp descending)
+  // Extract recent memory cards (first 4 by timestamp descending)
   const recentMemories = useMemo(() => {
-    return [...memories]
+    return [...(memories || [])]
+      .filter(m => m && m.timestamp)
       .sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime())
       .slice(0, 4);
   }, [memories]);
@@ -75,8 +77,8 @@ export default function DashboardHome() {
   // Gather unique tags (first 10 for display)
   const tagList = useMemo(() => {
     const counts: Record<string, number> = {};
-    memories.flatMap(m => m.tags).forEach(t => {
-      counts[t] = (counts[t] || 0) + 1;
+    (memories || []).flatMap(m => m?.tags || []).forEach(t => {
+      if (t) counts[t] = (counts[t] || 0) + 1;
     });
     return Object.entries(counts)
       .sort((a, b) => b[1] - a[1])

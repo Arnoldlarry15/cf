@@ -314,8 +314,9 @@ export default function MemorySpace3D() {
   }, []);
 
   const { cutOffTime } = useMemo(() => {
-    if (memories.length === 0) return { cutOffTime: 0 };
-    const times = memories.map(m => new Date(m.timestamp).getTime());
+    const list = memories || [];
+    if (list.length === 0) return { cutOffTime: 0 };
+    const times = list.map(m => new Date(m.timestamp).getTime());
     const min = Math.min(...times);
     const max = Math.max(...times);
     const cutOff = min + ((max - min) * (timelineProgress / 100));
@@ -323,14 +324,14 @@ export default function MemorySpace3D() {
   }, [memories, timelineProgress]);
 
   const visibleMemories = useMemo(() => {
-    return memories.filter(m => new Date(m.timestamp).getTime() <= cutOffTime);
+    return (memories || []).filter(m => m && m.timestamp && new Date(m.timestamp).getTime() <= cutOffTime);
   }, [memories, cutOffTime]);
 
   // Web Worker force layout initialization & ping-pong zero-copy messaging
   const workerRef = useRef<Worker | null>(null);
 
   useEffect(() => {
-    if (visibleMemories.length === 0) return;
+    if (!visibleMemories || visibleMemories.length === 0) return;
 
     const worker = new Worker(new URL('../workers/layoutWorker.ts', import.meta.url), { type: 'module' });
     workerRef.current = worker;
@@ -340,7 +341,8 @@ export default function MemorySpace3D() {
     const anchorPositions = new Float32Array(count * 3);
     const idToIndexMap: Record<string, number> = {};
 
-    visibleMemories.forEach((m, idx) => {
+    (visibleMemories || []).forEach((m, idx) => {
+      if (!m) return;
       idToIndexMap[m.id] = idx;
 
       const anchor = ANCHORS[m.category] || new THREE.Vector3(0, 0, 0);
@@ -359,8 +361,10 @@ export default function MemorySpace3D() {
     });
 
     const edgeList: Array<{ source: number; target: number; weight: number }> = [];
-    visibleMemories.forEach((m, srcIdx) => {
-      m.relationships.forEach(rel => {
+    (visibleMemories || []).forEach((m, srcIdx) => {
+      if (!m) return;
+      (m.relationships || []).forEach(rel => {
+        if (!rel) return;
         const tgtIdx = idToIndexMap[rel.targetId];
         if (tgtIdx !== undefined) {
           edgeList.push({ source: srcIdx, target: tgtIdx, weight: rel.weight || 0.5 });
@@ -396,14 +400,15 @@ export default function MemorySpace3D() {
 
   // Build 3D Octree for spatial indexing and sub-millisecond hit detection
   const octreeRoot = useMemo(() => {
-    if (!positionsArray || visibleMemories.length === 0) return null;
+    if (!positionsArray || !visibleMemories || visibleMemories.length === 0) return null;
     const bounds = new THREE.Box3(
       new THREE.Vector3(-40, -40, -40),
       new THREE.Vector3(40, 40, 40)
     );
     const tree = new OctreeNode(bounds, 8, 0, 4);
 
-    visibleMemories.forEach((m, idx) => {
+    (visibleMemories || []).forEach((m, idx) => {
+      if (!m) return;
       const idx3 = idx * 3;
       tree.insert({
         id: m.id,
@@ -422,9 +427,10 @@ export default function MemorySpace3D() {
   // Positions dictionary map for camera controller and edge connections
   const positionsMap = useMemo(() => {
     const map: Record<string, THREE.Vector3> = {};
-    if (!positionsArray) return map;
+    if (!positionsArray || !visibleMemories) return map;
 
-    visibleMemories.forEach((m, idx) => {
+    (visibleMemories || []).forEach((m, idx) => {
+      if (!m) return;
       const idx3 = idx * 3;
       const posVec = new THREE.Vector3(
         positionsArray[idx3],
@@ -447,11 +453,13 @@ export default function MemorySpace3D() {
   // Generate edge connection list
   const edges = useMemo(() => {
     const list: Array<{ id: string; start: THREE.Vector3; end: THREE.Vector3; weight: number; highlight: boolean; color: string }> = [];
-    visibleMemories.forEach(m => {
+    (visibleMemories || []).forEach(m => {
+      if (!m) return;
       const startPos = positionsMap[m.id];
       if (!startPos) return;
 
-      m.relationships.forEach(rel => {
+      (m.relationships || []).forEach(rel => {
+        if (!rel) return;
         const endPos = positionsMap[rel.targetId];
         if (!endPos) return;
 
@@ -465,7 +473,7 @@ export default function MemorySpace3D() {
           id: key,
           start: startPos,
           end: endPos,
-          weight: rel.weight,
+          weight: rel.weight || 0.5,
           highlight: isHighlight,
           color: color
         });

@@ -13,7 +13,7 @@ export async function generateChunkEmbeddings(
   chunks: TextChunk[],
   apiKey?: string
 ): Promise<VectorEmbedding[]> {
-  if (chunks.length === 0) return [];
+  if (!chunks || !Array.isArray(chunks) || chunks.length === 0) return [];
 
   // Try API route if available, otherwise use deterministic local vectorizer
   try {
@@ -34,13 +34,13 @@ export async function generateChunkEmbeddings(
   }
 
   // Local fallback vectorizer (generates deterministic 64-dimensional semantic vectors)
-  return chunks.map(chunk => generateLocalVector(chunk));
+  return (chunks || []).map(chunk => generateLocalVector(chunk));
 }
 
 function generateLocalVector(chunk: TextChunk): VectorEmbedding {
   const dim = 64;
   const vector = new Array(dim).fill(0);
-  const text = chunk.text.toLowerCase();
+  const text = (chunk?.text || '').toLowerCase();
 
   // Keyword feature extraction to place semantically similar words in similar vector dimensions
   const categories = {
@@ -52,7 +52,7 @@ function generateLocalVector(chunk: TextChunk): VectorEmbedding {
   };
 
   Object.entries(categories).forEach(([cat, keywords], catIdx) => {
-    keywords.forEach(kw => {
+    (keywords || []).forEach(kw => {
       if (text.includes(kw)) {
         const offset = catIdx * 12;
         vector[offset] += 1.5;

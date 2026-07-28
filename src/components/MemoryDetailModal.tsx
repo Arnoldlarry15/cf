@@ -162,8 +162,9 @@ export default function MemoryDetailModal() {
   // Find related memory objects
   const relatedMemories = useMemo(() => {
     if (!memory) return [];
-    return memory.relationships.map(rel => {
-      const match = memories.find(m => m.id === rel.targetId);
+    return (memory.relationships || []).map(rel => {
+      if (!rel) return null;
+      const match = (memories || []).find(m => m && m.id === rel.targetId);
       return match ? { ...match, relType: rel.type, relWeight: rel.weight } : null;
     }).filter(Boolean) as Array<Memory & { relType: string; relWeight: number }>;
   }, [memory, memories]);
@@ -270,7 +271,7 @@ export default function MemoryDetailModal() {
             <span className={`px-2.5 py-1 text-[10px] font-semibold border rounded-lg ${CATEGORY_TAGS_COLORS[memory.category]}`}>
               {memory.category} Cluster
             </span>
-            {memory.tags.map(tag => (
+            {(memory.tags || []).map(tag => (
               <span key={tag} className="px-2 py-0.5 text-[10px] font-mono text-stone-400 bg-white/5 border border-white/5 rounded-md">
                 #{tag}
               </span>
@@ -305,10 +306,10 @@ export default function MemoryDetailModal() {
             <span>Processing History</span>
           </div>
           <div className="space-y-3 pl-1">
-            {memory.history.map((evt, index) => (
+            {(memory.history || []).map((evt, index) => (
               <div key={index} className="flex items-start space-x-3.5 relative">
                 {/* Visual step line */}
-                {index < memory.history.length - 1 && (
+                {index < (memory.history || []).length - 1 && (
                   <span className="absolute left-[5px] top-[14px] bottom-[-16px] w-0.5 bg-white/5" />
                 )}
                 <span className="w-2.5 h-2.5 rounded-full border border-sky-400 bg-sky-950/40 z-10 mt-1" />
@@ -334,7 +335,7 @@ export default function MemoryDetailModal() {
               <span>Semantically Linked Memories</span>
             </div>
             <div className="flex flex-col gap-2">
-              {relatedMemories.map(m => (
+              {(relatedMemories || []).map(m => (
                 <button
                   key={m.id}
                   onClick={() => handleFocusRelatedMemory(m.id)}

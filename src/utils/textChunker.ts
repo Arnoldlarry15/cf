@@ -87,8 +87,8 @@ export function recursiveChunkText(
 
   // Update totalChunks count
   const total = chunks.length;
-  chunks.forEach(c => {
-    c.totalChunks = total;
+  (chunks || []).forEach(c => {
+    if (c) c.totalChunks = total;
   });
 
   return chunks;

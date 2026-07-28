@@ -14,9 +14,10 @@ export default function TimelineScrubber() {
 
   // Compute active date matching current progress percentage
   const currentDateDisplay = useMemo(() => {
-    if (memories.length === 0) return 'No active memories';
+    const list = (memories || []).filter(m => m && m.timestamp);
+    if (list.length === 0) return 'No active memories';
     
-    const times = memories.map(m => new Date(m.timestamp).getTime());
+    const times = list.map(m => new Date(m.timestamp).getTime());
     const min = Math.min(...times);
     const max = Math.max(...times);
     const targetUnix = min + ((max - min) * (timelineProgress / 100));

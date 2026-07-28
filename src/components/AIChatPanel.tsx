@@ -31,8 +31,8 @@ export default function AIChatPanel() {
 
   // Helper to map linked memories ids to actual object data
   const getLinkedMemoryData = (ids?: string[]) => {
-    if (!ids) return [];
-    return memories.filter(m => ids.includes(m.id));
+    if (!ids || !Array.isArray(ids)) return [];
+    return (memories || []).filter(m => m && ids.includes(m.id));
   };
 
   const handleFocusMemory = (id: string) => {
@@ -62,7 +62,7 @@ export default function AIChatPanel() {
 
       {/* Messages */}
       <div className="flex-1 overflow-y-auto p-5 space-y-4">
-        {chatMessages.map((msg) => {
+        {(chatMessages || []).map((msg) => {
           const isModel = msg.role === 'model';
           const linkedData = getLinkedMemoryData(msg.linkedMemories);
 

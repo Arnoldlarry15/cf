@@ -15,11 +15,12 @@ export function prepareWorkerPayload(
   points: Spatial3DPoint[],
   relationships: Array<{ sourceIndex: number; targetIndex: number; weight: number }> = []
 ): LayoutPayload {
-  const count = points.length;
+  const count = points ? points.length : 0;
   const positions = new Float32Array(count * 3);
   const anchors = new Float32Array(count * 3);
 
-  points.forEach((pt, idx) => {
+  (points || []).forEach((pt, idx) => {
+    if (!pt) return;
     const idx3 = idx * 3;
     positions[idx3] = pt.x;
     positions[idx3 + 1] = pt.y;
@@ -31,7 +32,7 @@ export function prepareWorkerPayload(
     anchors[idx3 + 2] = pt.z;
   });
 
-  const edges: EdgeData[] = relationships.map(r => ({
+  const edges: EdgeData[] = (relationships || []).map(r => ({
     source: r.sourceIndex,
     target: r.targetIndex,
     weight: r.weight
