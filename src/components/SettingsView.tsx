@@ -127,12 +127,12 @@ export default function SettingsView() {
               </div>
               <div className="flex justify-between items-center text-[11px]">
                 <span className="text-stone-500 font-medium">Memory Node count</span>
-                <span className="font-mono text-stone-300 font-bold">{memories.length} nodes</span>
+                <span className="font-mono text-stone-300 font-bold">{(memories || []).length} nodes</span>
               </div>
               <div className="flex justify-between items-center text-[11px]">
                 <span className="text-stone-500 font-medium">Active edge bounds</span>
                 <span className="font-mono text-stone-300 font-bold">
-                  {memories.reduce((acc, m) => acc + m.relationships.length, 0)} edges
+                  {(memories || []).reduce((acc, m) => acc + (m?.relationships ? m.relationships.length : 0), 0)} edges
                 </span>
               </div>
               <div className="flex justify-between items-center text-[11px]">

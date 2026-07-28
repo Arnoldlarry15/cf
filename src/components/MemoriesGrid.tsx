@@ -202,7 +202,7 @@ export default function MemoriesGrid() {
                   </div>
 
                   <h3 className="text-xs font-bold text-[#FAFAF9] leading-snug truncate group-hover:text-blue-400 transition">
-                    {m.application}: {m.windowTitle.split(' - ')[0]}
+                    {m.application || 'App'}: {(m.windowTitle ? String(m.windowTitle) : '').split(' - ')[0]}
                   </h3>
                   
                   <p className="text-xs text-stone-300 font-medium leading-relaxed">
@@ -213,18 +213,25 @@ export default function MemoriesGrid() {
                 {/* Footer and tags */}
                 <div className="space-y-3 pt-3 border-t border-white/5">
                   {/* tag list */}
-                  <div className="flex flex-wrap gap-1.5">
-                    {m.tags.slice(0, 3).map(tag => (
-                      <span key={tag} className="px-1.5 py-0.5 text-[9px] font-mono text-stone-500 bg-white/5 rounded border border-white/5">
-                        #{tag}
-                      </span>
-                    ))}
-                    {m.tags.length > 3 && (
-                      <span className="text-[9px] font-mono text-stone-500 pl-1 font-semibold">
-                        +{m.tags.length - 3} more
-                      </span>
-                    )}
-                  </div>
+                  {(() => {
+                    const tagsArray = Array.isArray(m.tags) 
+                      ? m.tags 
+                      : (typeof m.tags === 'string' ? (m.tags as string).split(',') : []);
+                    return (
+                      <div className="flex flex-wrap gap-1.5">
+                        {tagsArray.slice(0, 3).map(tag => (
+                          <span key={tag} className="px-1.5 py-0.5 text-[9px] font-mono text-stone-500 bg-white/5 rounded border border-white/5">
+                            #{tag}
+                          </span>
+                        ))}
+                        {tagsArray.length > 3 && (
+                          <span className="text-[9px] font-mono text-stone-500 pl-1 font-semibold">
+                            +{tagsArray.length - 3} more
+                          </span>
+                        )}
+                      </div>
+                    );
+                  })()}
 
                   {/* Actions buttons row */}
                   <div className="flex items-center justify-between pt-1">

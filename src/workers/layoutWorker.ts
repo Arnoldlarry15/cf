@@ -34,15 +34,22 @@ let damping = 0.85;
 let gravityStrength = 0.02;
 
 self.onmessage = (event: MessageEvent) => {
-  const { type, payload } = event.data;
+  if (!event || !event.data) return;
+
+  const type = event.data.type;
+  const payload = event.data.payload || event.data;
 
   if (type === 'INIT') {
+    if (!payload || !payload.positions) {
+      console.warn("layoutWorker: Received INIT event without positions payload", event.data);
+      return;
+    }
     const initData = payload as WorkerInitPayload;
     positions = new Float32Array(initData.positions); // Copy buffer
     count = positions.length / 3;
     velocities = new Float32Array(count * 3);
     anchors = initData.anchors ? new Float32Array(initData.anchors) : null;
-    edges = initData.edges || [];
+    edges = Array.isArray(initData.edges) ? initData.edges : [];
 
     if (initData.config) {
       if (initData.config.repulsion !== undefined) repulsionStrength = initData.config.repulsion;
@@ -54,9 +61,9 @@ self.onmessage = (event: MessageEvent) => {
     isRunning = true;
     runSimulationStep();
   } else if (type === 'UPDATE_POSITIONS') {
-    // Re-acquire buffer returned from main thread (ping-ponging zero-copy pattern)
-    if (payload.positions) {
-      positions = new Float32Array(payload.positions);
+    const rawPositions = payload ? (payload.positions || event.data.positions) : event.data.positions;
+    if (rawPositions) {
+      positions = new Float32Array(rawPositions);
       if (isRunning) {
         runSimulationStep();
       }

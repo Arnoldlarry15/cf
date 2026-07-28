@@ -373,12 +373,19 @@ export default function MemorySpace3D() {
     });
 
     worker.onmessage = (e: MessageEvent) => {
-      if (e.data.type === 'TICK' && e.data.positions) {
-        const updatedBuffer = new Float32Array(e.data.positions);
+      if (!e || !e.data) return;
+      const rawPositions = e.data.positions || (e.data.payload && e.data.payload.positions);
+      if (e.data.type === 'TICK' && rawPositions) {
+        const updatedBuffer = new Float32Array(rawPositions);
         setPositionsArray(updatedBuffer);
 
         const transferBack = updatedBuffer.buffer.slice(0);
-        worker.postMessage({ type: 'UPDATE_POSITIONS', positions: transferBack }, [transferBack]);
+        if (workerRef.current) {
+          workerRef.current.postMessage(
+            { type: 'UPDATE_POSITIONS', positions: transferBack, payload: { positions: transferBack } },
+            [transferBack]
+          );
+        }
       }
     };
 
