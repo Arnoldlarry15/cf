@@ -47,7 +47,7 @@ function InstancedNodes({
   onHoverNode: (index: number | null) => void;
 }) {
   const meshRef = useRef<THREE.InstancedMesh>(null);
-  const count = visibleMemories.length;
+  const count = visibleMemories ? visibleMemories.length : 0;
 
   const dummyMatrix = useMemo(() => new THREE.Matrix4(), []);
   const dummyColor = useMemo(() => new THREE.Color(), []);
@@ -60,11 +60,15 @@ function InstancedNodes({
 
     for (let i = 0; i < count; i++) {
       const i3 = i * 3;
+      if (i3 + 2 >= positionsArray.length) break;
+
       const x = positionsArray[i3];
       const y = positionsArray[i3 + 1];
       const z = positionsArray[i3 + 2];
 
       const memory = visibleMemories[i];
+      if (!memory || !memory.id) continue;
+
       const isSelected = selectedMemoryId === memory.id;
       const isFocused = activeGraphFocusId === memory.id;
       const isHovered = hoveredIndex === i;
@@ -79,7 +83,7 @@ function InstancedNodes({
       );
       instancedMesh.setMatrixAt(i, dummyMatrix);
 
-      const baseHex = CATEGORY_COLORS[memory.category] || DEFAULT_COLOR;
+      const baseHex = (memory.category && CATEGORY_COLORS[memory.category]) || DEFAULT_COLOR;
       if (isSelected || isHovered) {
         dummyColor.set('#FAFAF9');
       } else {
@@ -96,10 +100,16 @@ function InstancedNodes({
 
   const handlePointerMove = useCallback((e: any) => {
     e.stopPropagation();
-    if (e.instanceId !== undefined) {
-      onHoverNode(e.instanceId);
+    const instanceId = e.instanceId;
+    if (instanceId !== undefined && instanceId !== null && instanceId >= 0 && visibleMemories && instanceId < visibleMemories.length) {
+      const targetNode = visibleMemories[instanceId];
+      if (targetNode && targetNode.id) {
+        onHoverNode(instanceId);
+        return;
+      }
     }
-  }, [onHoverNode]);
+    onHoverNode(null);
+  }, [visibleMemories, onHoverNode]);
 
   const handlePointerOut = useCallback((e: any) => {
     e.stopPropagation();
@@ -108,8 +118,16 @@ function InstancedNodes({
 
   const handleClick = useCallback((e: any) => {
     e.stopPropagation();
-    if (e.instanceId !== undefined && visibleMemories[e.instanceId]) {
-      onSelectNode(visibleMemories[e.instanceId].id);
+    const instanceId = e.instanceId;
+    if (instanceId === undefined || instanceId === null) return;
+
+    if (visibleMemories && instanceId >= 0 && instanceId < visibleMemories.length) {
+      const targetNode = visibleMemories[instanceId];
+      if (targetNode && targetNode.id) {
+        onSelectNode(targetNode.id);
+      } else {
+        console.warn(`Click registered on instanceId ${instanceId}, but no matching node was found.`);
+      }
     }
   }, [visibleMemories, onSelectNode]);
 
@@ -489,8 +507,10 @@ export default function MemorySpace3D() {
     return list;
   }, [visibleMemories, positionsMap, selectedMemoryId]);
 
-  const hoveredMemory = hoveredIndex !== null && visibleMemories[hoveredIndex] ? visibleMemories[hoveredIndex] : null;
-  const hoveredPosition = hoveredMemory ? positionsMap[hoveredMemory.id] : null;
+  const hoveredMemory = (hoveredIndex !== null && hoveredIndex >= 0 && visibleMemories && hoveredIndex < visibleMemories.length)
+    ? visibleMemories[hoveredIndex]
+    : null;
+  const hoveredPosition = (hoveredMemory && hoveredMemory.id) ? positionsMap[hoveredMemory.id] : null;
 
   return (
     <div className="w-full h-full relative bg-gradient-to-tr from-[#e0f2fe] via-[#fafbfd] to-[#fae8ff]">
@@ -525,6 +545,7 @@ export default function MemorySpace3D() {
           activeGraphFocusId={activeGraphFocusId}
           hoveredIndex={hoveredIndex}
           onSelectNode={(id) => {
+            if (!id) return;
             selectMemory(id);
             setGraphFocus(id);
             // Log interaction into WAL queue
