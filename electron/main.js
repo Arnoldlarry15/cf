@@ -196,11 +196,13 @@ function openDashboard() {
     width: 1280,
     height: 800,
     show: false,
+    backgroundColor: '#050507',
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true,
       nodeIntegration: false,
-      sandbox: true
+      sandbox: true,
+      webGl: true
     },
     autoHideMenuBar: true,
     title: "CaptureFlow Dashboard"
@@ -209,6 +211,18 @@ function openDashboard() {
   dashboardWindow.maximize();
   dashboardWindow.once('ready-to-show', () => {
     if (dashboardWindow) dashboardWindow.show();
+  });
+
+  // Force DevTools open automatically to inspect renderer logs and errors
+  dashboardWindow.webContents.openDevTools({ mode: 'detach' });
+
+  // Add crash listeners to catch renderer crashes or unresponsiveness
+  dashboardWindow.webContents.on('render-process-gone', (event, details) => {
+    console.error('Electron Renderer Process Crashed:', details);
+  });
+
+  dashboardWindow.webContents.on('unresponsive', () => {
+    console.error('Electron Renderer Process Became Unresponsive');
   });
 
   dashboardWindow.webContents.on('did-fail-load', (event, errorCode, errorDescription, validatedURL) => {
