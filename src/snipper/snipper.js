@@ -1,5 +1,8 @@
 let isDragging = false;
 let startX, startY;
+let scrollAnimationFrame = null;
+let lastMouseEvent = null;
+
 const selection = document.getElementById('selection');
 const bg = document.getElementById('desktop-bg');
 
@@ -19,11 +22,49 @@ if (api && api.onStartSnipping) {
   console.error("CaptureFlow API not found on window object.");
 }
 
+function updateSelectionBox() {
+  if (!isDragging || !lastMouseEvent) return;
+
+  const edgeThreshold = 50; // px from screen top/bottom
+  const scrollSpeed = 15;
+  const clientY = lastMouseEvent.clientY;
+  const clientX = lastMouseEvent.clientX;
+
+  // Edge auto-scrolling loop
+  if (clientY > window.innerHeight - edgeThreshold) {
+    window.scrollBy({ top: scrollSpeed, behavior: 'auto' });
+  } else if (clientY < edgeThreshold) {
+    window.scrollBy({ top: -scrollSpeed, behavior: 'auto' });
+  }
+
+  const pageX = clientX + window.scrollX;
+  const pageY = clientY + window.scrollY;
+
+  const currentStartX = startX;
+  const currentStartY = startY;
+
+  const width = Math.abs(pageX - currentStartX);
+  const height = Math.abs(pageY - currentStartY);
+
+  const left = Math.min(pageX, currentStartX);
+  const top = Math.min(pageY, currentStartY);
+
+  selection.style.width = width + 'px';
+  selection.style.height = height + 'px';
+  selection.style.left = left + 'px';
+  selection.style.top = top + 'px';
+
+  if (isDragging) {
+    scrollAnimationFrame = requestAnimationFrame(updateSelectionBox);
+  }
+}
+
 document.addEventListener('mousedown', (e) => {
   e.preventDefault();
   isDragging = true;
-  startX = e.clientX;
-  startY = e.clientY;
+  startX = e.clientX + window.scrollX;
+  startY = e.clientY + window.scrollY;
+  lastMouseEvent = e;
   
   selection.style.left = startX + 'px';
   selection.style.top = startY + 'px';
@@ -33,26 +74,23 @@ document.addEventListener('mousedown', (e) => {
   
   // Remove full body dim, let the selection box shadow handle dimming everything outside it
   document.body.style.boxShadow = 'none';
+
+  if (scrollAnimationFrame) cancelAnimationFrame(scrollAnimationFrame);
+  scrollAnimationFrame = requestAnimationFrame(updateSelectionBox);
 });
 
 document.addEventListener('mousemove', (e) => {
   if (!isDragging) return;
-  
-  const currentX = e.clientX;
-  const currentY = e.clientY;
-  
-  const width = Math.abs(currentX - startX);
-  const height = Math.abs(currentY - startY);
-  
-  selection.style.width = width + 'px';
-  selection.style.height = height + 'px';
-  selection.style.left = (currentX < startX ? currentX : startX) + 'px';
-  selection.style.top = (currentY < startY ? currentY : startY) + 'px';
+  lastMouseEvent = e;
 });
 
 document.addEventListener('mouseup', (e) => {
   if (!isDragging) return;
   isDragging = false;
+  if (scrollAnimationFrame) {
+    cancelAnimationFrame(scrollAnimationFrame);
+    scrollAnimationFrame = null;
+  }
   
   const rect = selection.getBoundingClientRect();
   const currentApi = getAPI();
@@ -93,10 +131,15 @@ document.addEventListener('mouseup', (e) => {
 
 document.addEventListener('keydown', (e) => {
   if (e.key === 'Escape') {
+    if (scrollAnimationFrame) {
+      cancelAnimationFrame(scrollAnimationFrame);
+      scrollAnimationFrame = null;
+    }
     const currentApi = getAPI();
     if (currentApi && currentApi.closeSnipper) {
       currentApi.closeSnipper();
     }
   }
 });
+
 

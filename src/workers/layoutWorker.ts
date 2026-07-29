@@ -26,11 +26,18 @@ let anchors: Float32Array | null = null;
 let edges: EdgeData[] = [];
 let count = 0;
 let isRunning = false;
+let isSettled = false;
+
+// Simulated Annealing Cooling Parameters
+let alpha = 1.0;
+const MIN_ALPHA = 0.005;
+const COOLING_FACTOR = 0.995;
+const MIN_VELOCITY_SQ = 0.0001;
 
 // Physics parameters
 let repulsionStrength = 20.0;
 let attractionStrength = 0.08;
-let damping = 0.85;
+let damping = 0.88;
 let gravityStrength = 0.02;
 
 self.onmessage = (event: MessageEvent) => {
@@ -58,29 +65,51 @@ self.onmessage = (event: MessageEvent) => {
       if (initData.config.gravity !== undefined) gravityStrength = initData.config.gravity;
     }
 
+    // Reset physics cooling & simulation state
+    alpha = 1.0;
+    isSettled = false;
     isRunning = true;
     runSimulationStep();
   } else if (type === 'UPDATE_POSITIONS') {
     const rawPositions = payload ? (payload.positions || event.data.positions) : event.data.positions;
     if (rawPositions) {
       positions = new Float32Array(rawPositions);
-      if (isRunning) {
+      // Re-warm physics if positions updated externally
+      if (!isSettled && isRunning) {
         runSimulationStep();
       }
     }
+  } else if (type === 'REWARM') {
+    alpha = 1.0;
+    isSettled = false;
+    if (isRunning) {
+      runSimulationStep();
+    }
   } else if (type === 'STOP') {
     isRunning = false;
+    isSettled = true;
   }
 };
 
 function runSimulationStep() {
   if (!positions || !velocities || !isRunning) return;
 
+  if (alpha < MIN_ALPHA || isSettled) {
+    isSettled = true;
+    const transferBuffer = positions.buffer.slice(0);
+    (self as unknown as Worker).postMessage(
+      { type: 'SETTLED', positions: transferBuffer, alpha },
+      [transferBuffer]
+    );
+    return;
+  }
+
   const n = count;
   const pos = positions;
   const vel = velocities;
+  const currentAlpha = alpha;
 
-  // Step 1: Repulsion between nodes (N^2 optimized typed array loop)
+  // Step 1: Repulsion between nodes (N^2 optimized typed array loop, scaled by alpha)
   for (let i = 0; i < n; i++) {
     const i3 = i * 3;
     const px = pos[i3];
@@ -96,7 +125,7 @@ function runSimulationStep() {
       const distSq = dx * dx + dy * dy + dz * dz + 0.1; // Softener to prevent division by zero
       if (distSq < 400.0) { // Cutoff distance
         const dist = Math.sqrt(distSq);
-        const force = repulsionStrength / (distSq * dist);
+        const force = (repulsionStrength / (distSq * dist)) * currentAlpha;
         const fx = dx * force;
         const fy = dy * force;
         const fz = dz * force;
@@ -112,7 +141,7 @@ function runSimulationStep() {
     }
   }
 
-  // Step 2: Attraction along edges
+  // Step 2: Attraction along edges (scaled by alpha)
   for (let e = 0; e < edges.length; e++) {
     const { source: i, target: j, weight } = edges[e];
     if (i >= n || j >= n) continue;
@@ -127,7 +156,7 @@ function runSimulationStep() {
     const dist = Math.sqrt(dx * dx + dy * dy + dz * dz) + 0.001;
     const idealDist = 4.0 / Math.max(0.2, weight);
     const delta = dist - idealDist;
-    const force = delta * attractionStrength * weight;
+    const force = delta * attractionStrength * weight * currentAlpha;
 
     const fx = (dx / dist) * force;
     const fy = (dy / dist) * force;
@@ -142,7 +171,9 @@ function runSimulationStep() {
     vel[j3 + 2] -= fz;
   }
 
-  // Step 3: Cluster Anchor Gravity / Center Gravity
+  // Step 3: Cluster Anchor Gravity & Velocity Damping
+  let maxVelSq = 0;
+
   for (let i = 0; i < n; i++) {
     const i3 = i * 3;
     const targetX = anchors ? anchors[i3] : 0;
@@ -153,25 +184,40 @@ function runSimulationStep() {
     const dy = targetY - pos[i3 + 1];
     const dz = targetZ - pos[i3 + 2];
 
-    vel[i3] += dx * gravityStrength;
-    vel[i3 + 1] += dy * gravityStrength;
-    vel[i3 + 2] += dz * gravityStrength;
+    vel[i3] += dx * gravityStrength * currentAlpha;
+    vel[i3 + 1] += dy * gravityStrength * currentAlpha;
+    vel[i3 + 2] += dz * gravityStrength * currentAlpha;
 
-    // Apply damping and update position
+    // Apply damping friction
     vel[i3] *= damping;
     vel[i3 + 1] *= damping;
     vel[i3 + 2] *= damping;
 
+    // Update positions
     pos[i3] += vel[i3];
     pos[i3 + 1] += vel[i3 + 1];
     pos[i3 + 2] += vel[i3 + 2];
+
+    // Energy tracking
+    const vSq = vel[i3] * vel[i3] + vel[i3 + 1] * vel[i3 + 1] + vel[i3 + 2] * vel[i3 + 2];
+    if (vSq > maxVelSq) maxVelSq = vSq;
+  }
+
+  // Decay cooling alpha
+  alpha *= COOLING_FACTOR;
+
+  if (alpha < MIN_ALPHA || maxVelSq < MIN_VELOCITY_SQ) {
+    isSettled = true;
   }
 
   // Step 4: Transfer positions buffer back to main thread
-  // Create a copy or transfer the underlying ArrayBuffer
   const transferBuffer = pos.buffer.slice(0);
   (self as unknown as Worker).postMessage(
-    { type: 'TICK', positions: transferBuffer },
+    {
+      type: isSettled ? 'SETTLED' : 'TICK',
+      positions: transferBuffer,
+      alpha
+    },
     [transferBuffer]
   );
 }

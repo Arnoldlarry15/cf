@@ -164,15 +164,18 @@ function CameraController({
 
   const targetLookAt = useRef(new THREE.Vector3(0, 0, 0));
   const targetCamPos = useRef(new THREE.Vector3(0, 0, 25));
-  const isUserInteracting = useRef(false);
+  const isFlying = useRef(false);
+  const lastFocusId = useRef<string | null>(null);
 
   useEffect(() => {
-    if (activeFocusId && positionsMap[activeFocusId]) {
+    if (activeFocusId && positionsMap[activeFocusId] && activeFocusId !== lastFocusId.current) {
+      lastFocusId.current = activeFocusId;
       const nodePos = positionsMap[activeFocusId];
       targetLookAt.current.copy(nodePos);
-      targetCamPos.current.copy(nodePos).add(new THREE.Vector3(3, 3, 8));
-      isUserInteracting.current = false;
-    } else if (Object.keys(positionsMap).length > 0) {
+      targetCamPos.current.copy(nodePos).add(new THREE.Vector3(0, 0, 8));
+      isFlying.current = true;
+    } else if (!activeFocusId && Object.keys(positionsMap).length > 0 && lastFocusId.current !== 'default') {
+      lastFocusId.current = 'default';
       const center = new THREE.Vector3();
       const nodeKeys = Object.keys(positionsMap);
       nodeKeys.forEach(k => center.add(positionsMap[k]));
@@ -180,22 +183,24 @@ function CameraController({
 
       targetLookAt.current.copy(center);
       targetCamPos.current.set(center.x, center.y, center.z + 24);
-      isUserInteracting.current = false;
+      isFlying.current = true;
     }
   }, [activeFocusId, positionsMap]);
 
   useFrame(() => {
-    if (!isUserInteracting.current) {
-      camera.position.lerp(targetCamPos.current, 0.08);
+    if (!controlsRef.current) return;
 
-      if (controlsRef.current) {
-        const ctrlTarget = controlsRef.current.target;
-        ctrlTarget.lerp(targetLookAt.current, 0.08);
-        controlsRef.current.update();
-      } else {
-        camera.lookAt(targetLookAt.current);
+    if (isFlying.current) {
+      camera.position.lerp(targetCamPos.current, 0.08);
+      controlsRef.current.target.lerp(targetLookAt.current, 0.08);
+      controlsRef.current.update();
+
+      const distCam = camera.position.distanceTo(targetCamPos.current);
+      const distTarget = controlsRef.current.target.distanceTo(targetLookAt.current);
+      if (distCam < 0.05 && distTarget < 0.05) {
+        isFlying.current = false; // Target flight complete! Hand control back to OrbitControls
       }
-    } else if (controlsRef.current) {
+    } else {
       controlsRef.current.update();
     }
   });
@@ -203,12 +208,17 @@ function CameraController({
   return (
     <OrbitControls
       ref={controlsRef}
-      enableDamping
+      makeDefault
+      enableDamping={true}
       dampingFactor={0.05}
-      maxDistance={80}
+      enablePan={true}
+      panSpeed={1.5}
+      rotateSpeed={0.8}
+      zoomSpeed={1.2}
+      maxDistance={120}
       minDistance={1.5}
       onStart={() => {
-        isUserInteracting.current = true;
+        isFlying.current = false;
       }}
     />
   );
@@ -393,17 +403,20 @@ export default function MemorySpace3D() {
     worker.onmessage = (e: MessageEvent) => {
       if (!e || !e.data) return;
       const rawPositions = e.data.positions || (e.data.payload && e.data.payload.positions);
-      if (e.data.type === 'TICK' && rawPositions) {
+      if (rawPositions) {
         const updatedBuffer = new Float32Array(rawPositions);
         setPositionsArray(updatedBuffer);
 
-        const transferBack = updatedBuffer.buffer.slice(0);
-        if (workerRef.current) {
-          workerRef.current.postMessage(
-            { type: 'UPDATE_POSITIONS', positions: transferBack, payload: { positions: transferBack } },
-            [transferBack]
-          );
+        if (e.data.type === 'TICK') {
+          const transferBack = updatedBuffer.buffer.slice(0);
+          if (workerRef.current) {
+            workerRef.current.postMessage(
+              { type: 'UPDATE_POSITIONS', positions: transferBack, payload: { positions: transferBack } },
+              [transferBack]
+            );
+          }
         }
+        // If type === 'SETTLED', worker physics cooling has completed - stop posting back to preserve 60FPS
       }
     };
 
@@ -510,7 +523,9 @@ export default function MemorySpace3D() {
   const hoveredMemory = (hoveredIndex !== null && hoveredIndex >= 0 && visibleMemories && hoveredIndex < visibleMemories.length)
     ? visibleMemories[hoveredIndex]
     : null;
-  const hoveredPosition = (hoveredMemory && hoveredMemory.id) ? positionsMap[hoveredMemory.id] : null;
+
+  const activeDisplayMemory = hoveredMemory || (selectedMemoryId ? visibleMemories.find(m => m.id === selectedMemoryId) : null);
+  const activeDisplayPosition = (activeDisplayMemory && activeDisplayMemory.id) ? positionsMap[activeDisplayMemory.id] : null;
 
   return (
     <div className="w-full h-full relative bg-gradient-to-tr from-[#e0f2fe] via-[#fafbfd] to-[#fae8ff]">
@@ -567,35 +582,57 @@ export default function MemorySpace3D() {
         ))}
 
         {/* Dynamic 3D-to-2D Spatial HUD Action Menu Overlay */}
-        {hoveredMemory && hoveredPosition && (
-          <Html position={[hoveredPosition.x, hoveredPosition.y + 1.2, hoveredPosition.z]} center distanceFactor={10}>
-            <div className="bg-[#0a0a0f]/95 border border-blue-500/30 text-stone-200 text-[11px] p-2.5 rounded-xl font-sans shadow-[0_0_20px_rgba(59,130,246,0.3)] whitespace-nowrap pointer-events-auto select-none glass flex flex-col gap-1.5 min-w-[180px]">
-              <div className="flex items-center justify-between border-b border-white/10 pb-1">
-                <span className="font-bold text-blue-400 uppercase text-[9px] tracking-wider">{hoveredMemory.application}</span>
-                <span className="text-[9px] text-stone-400">{new Date(hoveredMemory.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
+        {activeDisplayMemory && activeDisplayPosition && (
+          <Html position={[activeDisplayPosition.x, activeDisplayPosition.y + 1.2, activeDisplayPosition.z]} center distanceFactor={10}>
+            <div className="bg-[#0a0a0f]/95 border border-blue-500/30 text-stone-200 text-[11px] p-3 rounded-xl font-sans shadow-[0_0_25px_rgba(59,130,246,0.35)] whitespace-nowrap pointer-events-auto select-none glass flex flex-col gap-2 min-w-[210px] max-w-[280px]">
+              <div className="flex items-center justify-between border-b border-white/10 pb-1.5">
+                <span className="font-bold text-blue-400 uppercase text-[9px] tracking-wider">{activeDisplayMemory.application}</span>
+                <span className="text-[9px] text-stone-400">{new Date(activeDisplayMemory.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
               </div>
-              <p className="text-[10px] text-stone-200 truncate max-w-[200px] font-medium">{hoveredMemory.windowTitle}</p>
+              <p className="text-[11px] text-stone-100 font-semibold truncate">{activeDisplayMemory.windowTitle}</p>
+              {activeDisplayMemory.summary && (
+                <p className="text-[10px] text-stone-400 line-clamp-2 leading-tight whitespace-normal">{activeDisplayMemory.summary}</p>
+              )}
+              {activeDisplayMemory.tags && activeDisplayMemory.tags.length > 0 && (
+                <div className="flex flex-wrap gap-1 mt-0.5">
+                  {activeDisplayMemory.tags.slice(0, 3).map((t, idx) => (
+                    <span key={idx} className="bg-white/10 text-stone-300 text-[8px] px-1.5 py-0.5 rounded font-mono">#{t}</span>
+                  ))}
+                </div>
+              )}
               
-              <div className="flex items-center gap-1 mt-1">
+              <div className="flex items-center gap-1.5 mt-1 pt-1.5 border-t border-white/10">
                 <button
                   onClick={(e) => {
                     e.stopPropagation();
-                    selectMemory(hoveredMemory.id);
-                    setGraphFocus(hoveredMemory.id);
+                    selectMemory(activeDisplayMemory.id);
+                    setGraphFocus(activeDisplayMemory.id);
                   }}
-                  className="bg-blue-600/80 hover:bg-blue-500 text-white text-[9px] px-2 py-1 rounded transition-colors"
+                  className="bg-blue-600/80 hover:bg-blue-500 text-white text-[9px] px-2.5 py-1 rounded transition-colors font-medium cursor-pointer"
                 >
                   Focus Flight
                 </button>
                 <button
                   onClick={(e) => {
                     e.stopPropagation();
-                    selectMemory(hoveredMemory.id);
+                    selectMemory(activeDisplayMemory.id);
                   }}
-                  className="bg-white/10 hover:bg-white/20 text-stone-300 text-[9px] px-2 py-1 rounded transition-colors"
+                  className="bg-white/10 hover:bg-white/20 text-stone-300 text-[9px] px-2.5 py-1 rounded transition-colors font-medium cursor-pointer"
                 >
                   Inspect
                 </button>
+                {selectedMemoryId === activeDisplayMemory.id && (
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      selectMemory(null);
+                      setGraphFocus(null);
+                    }}
+                    className="bg-stone-800 hover:bg-stone-700 text-stone-400 text-[9px] px-2 py-1 rounded transition-colors cursor-pointer ml-auto"
+                  >
+                    Close
+                  </button>
+                )}
               </div>
             </div>
           </Html>
