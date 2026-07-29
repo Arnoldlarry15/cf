@@ -2,6 +2,7 @@ import { create } from 'zustand';
 import { Memory, ChatMessage } from './types';
 import { deleteMemoryLocal, updateMemoryLocal } from './services/storageEngine';
 import { WriteAheadLog } from './services/writeAheadLog';
+import { API_BASE } from './config';
 
 interface AppState {
   memories: Memory[];
@@ -69,7 +70,7 @@ export const useAppStore = create<AppState>((set, get) => ({
         const data = await window.captureflow.snippets.get();
         set({ memories: Array.isArray(data) ? data : [] });
       } else {
-        const res = await fetch('/api/memories');
+        const res = await fetch(`${API_BASE}/api/memories`);
         if (res.ok) {
           const data = await res.json();
           set({ memories: Array.isArray(data) ? data : [] });
@@ -142,7 +143,7 @@ export const useAppStore = create<AppState>((set, get) => ({
           });
         }
       } else {
-        const res = await fetch('/api/ai/chat', {
+        const res = await fetch(`${API_BASE}/api/ai/chat`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ messages: history }),
@@ -194,7 +195,7 @@ export const useAppStore = create<AppState>((set, get) => ({
         await window.captureflow.snippets.capture(payload);
         await get().fetchMemories();
       } else {
-        const res = await fetch('/api/memories/capture', {
+        const res = await fetch(`${API_BASE}/api/memories/capture`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(payload),

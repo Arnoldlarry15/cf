@@ -2,6 +2,7 @@
 // Continuously flushes queued Write-Ahead Log events to server database asynchronously.
 
 import { WriteAheadLog } from './writeAheadLog';
+import { API_BASE } from '../config';
 
 export class SyncEngine {
   private static instance: SyncEngine;
@@ -40,7 +41,7 @@ export class SyncEngine {
 
     this.isSyncing = true;
     try {
-      const res = await fetch('/api/sync', {
+      const res = await fetch(`${API_BASE}/api/sync`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ events: unsynced })

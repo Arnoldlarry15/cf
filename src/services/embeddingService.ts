@@ -2,6 +2,7 @@
 // Generates high-dimensional vector embeddings for text chunks using Google GenAI or local fallback.
 
 import { TextChunk } from '../utils/textChunker';
+import { API_BASE } from '../config';
 
 export interface VectorEmbedding {
   chunkId: string;
@@ -17,7 +18,7 @@ export async function generateChunkEmbeddings(
 
   // Try API route if available, otherwise use deterministic local vectorizer
   try {
-    const res = await fetch('/api/embeddings', {
+    const res = await fetch(`${API_BASE}/api/embeddings`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ chunks })
