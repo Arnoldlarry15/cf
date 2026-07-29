@@ -428,15 +428,15 @@ async function startServer() {
       
       const newMemory: Memory = {
         id: newId,
-        imageUrl: application.toLowerCase().replace(/[^a-z]/g, '_') || 'chrome_search',
-        application,
-        windowTitle,
+        imageUrl: (application || '').toLowerCase().replace(/[^a-z]/g, '_') || 'chrome_search',
+        application: application || 'Application',
+        windowTitle: windowTitle || 'Untitled Window',
         timestamp: newTimestamp,
         category: category || "Productivity",
         confidence: 0.90 + Math.random() * 0.1,
-        ocrText: ocrText || `Captured terminal or application state for ${windowTitle}`,
-        summary: summary || `Analyzed capture of ${application} window title "${windowTitle}".`,
-        tags: tags && Array.isArray(tags) ? tags : ["captured", application.toLowerCase()],
+        ocrText: ocrText || `Captured terminal or application state for ${windowTitle || 'window'}`,
+        summary: summary || `Analyzed capture of ${application || 'application'} window title "${windowTitle || ''}".`,
+        tags: tags && Array.isArray(tags) ? tags : ["captured", (application || 'app').toLowerCase()],
         relationships: [],
         history: [
           { timestamp: newTimestamp, action: "capture", details: "Manual capture simulated via Dashboard playground panel." },
@@ -565,13 +565,15 @@ This allows our visual interface to automatically highlight and zoom into those 
       // Offline fallback when no API key is specified, parsing client side queries gracefully with simple keyword matching
       console.warn("[Server] Gemini not available. Using local semantic indexing algorithm.");
       
-      const queryLower = lastUserMessage.toLowerCase();
+      const queryLower = (lastUserMessage || '').toLowerCase();
       const matchedMemories = databaseMemories.filter(m => 
-        m.ocrText.toLowerCase().includes(queryLower) || 
-        m.application.toLowerCase().includes(queryLower) || 
-        m.windowTitle.toLowerCase().includes(queryLower) || 
-        m.tags.some(t => t.toLowerCase().includes(queryLower)) ||
-        m.summary.toLowerCase().includes(queryLower)
+        m && (
+          (m.ocrText || '').toLowerCase().includes(queryLower) || 
+          (m.application || '').toLowerCase().includes(queryLower) || 
+          (m.windowTitle || '').toLowerCase().includes(queryLower) || 
+          (m.tags || []).some(t => (t ? String(t) : '').toLowerCase().includes(queryLower)) ||
+          (m.summary || '').toLowerCase().includes(queryLower)
+        )
       );
 
       let responseText = `I am currently operating in **Local Cognitive Indexing Mode** (no Gemini API Key configured in your Secrets). I've run a keyword matching algorithm on your OCR logs:\n\n`;

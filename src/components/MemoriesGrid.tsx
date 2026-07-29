@@ -34,19 +34,21 @@ export default function MemoriesGrid() {
 
     // Text search (fuzzy OCR check)
     if (searchQuery.trim()) {
-      const q = searchQuery.toLowerCase();
+      const q = (searchQuery || '').toLowerCase();
       list = list.filter(m => 
-        (m.ocrText || '').toLowerCase().includes(q) ||
-        (m.windowTitle || '').toLowerCase().includes(q) ||
-        (m.application || '').toLowerCase().includes(q) ||
-        (m.summary || '').toLowerCase().includes(q) ||
-        (m.tags || []).some(t => (t || '').toLowerCase().includes(q))
+        m && (
+          (m.ocrText || '').toLowerCase().includes(q) ||
+          (m.windowTitle || '').toLowerCase().includes(q) ||
+          (m.application || '').toLowerCase().includes(q) ||
+          (m.summary || '').toLowerCase().includes(q) ||
+          (m.tags || []).some(t => (t ? String(t) : '').toLowerCase().includes(q))
+        )
       );
     }
 
     // Category filter
     if (selectedCategory) {
-      list = list.filter(m => m.category === selectedCategory);
+      list = list.filter(m => m && m.category === selectedCategory);
     }
 
     // Confidence filter

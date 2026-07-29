@@ -14,7 +14,7 @@ const CATEGORY_TAGS_COLORS: Record<string, string> = {
 
 // Custom interactive CSS-rendered Mock Screenshot based on application
 function MockScreenshot({ memory }: { memory: Memory }) {
-  const app = memory.application.toLowerCase();
+  const app = (memory?.application || '').toLowerCase();
 
   if (app.includes('vs code') || app.includes('editor')) {
     return (
@@ -118,28 +118,19 @@ function MockScreenshot({ memory }: { memory: Memory }) {
     );
   }
 
-  // Fallback Chrome web browser or search visual mock
   return (
-    <div className="w-full aspect-video rounded-xl bg-[#0F172A] border border-white/5 p-4 flex flex-col justify-between overflow-hidden shadow-inner text-[10px]">
-      <div className="flex items-center space-x-1.5 border-b border-white/5 pb-2 text-stone-400 bg-[#0B0F19]/60 px-2 py-1 rounded">
-        <span className="w-2 h-2 rounded-full bg-stone-600"/>
-        <span className="text-[8px] text-stone-500 flex-1 truncate">https://www.google.com/search?q=coulombs+repulsion+force+threejs</span>
-        <span className="text-[7px] bg-white/5 px-1 py-0.2 rounded">SSL</span>
+    <div className="w-full aspect-video rounded-xl bg-slate-950 border border-white/5 p-4 flex flex-col justify-between overflow-hidden shadow-inner text-[10px]">
+      <div className="flex items-center justify-between border-b border-white/5 pb-2 text-stone-400">
+        <span className="font-semibold text-stone-200">{memory?.application || 'CaptureFlow'}</span>
+        <span className="text-[8px] text-stone-500 font-mono">ID: {memory?.id?.slice(0, 8) || 'N/A'}</span>
       </div>
-      <div className="flex-1 flex flex-col justify-center space-y-2 py-4 px-6">
-        <div className="h-3 w-2/3 bg-[#38BDF8]/10 border border-[#38BDF8]/20 rounded px-1.5 py-0.5 flex items-center">
-          <span className="text-[8px] text-[#38BDF8] font-bold">Query: Coulombs Law ThreeJS</span>
-        </div>
-        <p className="text-stone-400 text-[9px] leading-relaxed">
-          "Coulomb's attraction and repulsion forces form the basis of electrostatic simulations in 3D canvas layouts..."
-        </p>
-        <div className="flex space-x-2 text-[8px] text-sky-400/80">
-          <span>StackOverflow</span>
-          <span>ThreeJS docs</span>
-        </div>
+      <div className="flex-1 py-3 text-stone-300 space-y-1 overflow-y-auto">
+        <p className="text-stone-400 font-medium">{memory?.windowTitle || 'Captured Context'}</p>
+        <p className="text-stone-500 text-[9px] mt-1">{memory?.summary || memory?.ocrText || 'No detailed content preview available.'}</p>
       </div>
-      <div className="text-[7px] text-stone-600 font-mono">
-        Chrome v122 - Tab Focus Memory
+      <div className="border-t border-white/5 pt-2 text-[8px] text-stone-500 flex justify-between">
+        <span>Captured via System Desktop Hook</span>
+        <span>Status: Synced</span>
       </div>
     </div>
   );
@@ -149,14 +140,14 @@ export default function MemoryDetailModal() {
   const selectedMemoryId = useAppStore(state => state.selectedMemoryId);
   const memories = useAppStore(state => state.memories);
   const selectMemory = useAppStore(state => state.selectMemory);
-  const deleteMemory = useAppStore(state => state.deleteMemory);
   const setGraphFocus = useAppStore(state => state.setGraphFocus);
+  const deleteMemory = useAppStore(state => state.deleteMemory);
 
   const [copied, setCopied] = React.useState(false);
 
-  // Retrieve current active memory
   const memory = useMemo(() => {
-    return memories.find(m => m.id === selectedMemoryId) || null;
+    if (!selectedMemoryId || !memories) return null;
+    return memories.find(m => m && m.id === selectedMemoryId) || null;
   }, [memories, selectedMemoryId]);
 
   // Find related memory objects
@@ -172,7 +163,9 @@ export default function MemoryDetailModal() {
   if (!memory) return null;
 
   const handleCopyOCRText = () => {
-    navigator.clipboard.writeText(memory.ocrText);
+    if (navigator?.clipboard) {
+      navigator.clipboard.writeText(memory.ocrText || '');
+    }
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
   };
@@ -191,7 +184,7 @@ export default function MemoryDetailModal() {
             <Monitor size={15} />
           </div>
           <span className="text-sm font-semibold text-[#FAFAF9] tracking-tight truncate max-w-[200px]">
-            {memory.application} Log
+            {memory.application || 'Capture'} Log
           </span>
         </div>
         <div className="flex items-center space-x-1">
@@ -233,7 +226,7 @@ export default function MemoryDetailModal() {
             <span>AI Summarization</span>
           </div>
           <p className="text-xs text-[#FAFAF9] leading-relaxed">
-            {memory.summary}
+            {memory.summary || 'No summary available for this memory.'}
           </p>
         </div>
 
@@ -243,20 +236,20 @@ export default function MemoryDetailModal() {
             <div className="text-[10px] text-stone-500 font-mono uppercase mb-1">Captured Date</div>
             <div className="flex items-center space-x-1.5 text-xs text-stone-300">
               <Calendar size={13} className="text-stone-400" />
-              <span>{new Date(memory.timestamp).toLocaleDateString()}</span>
+              <span>{memory.timestamp ? new Date(memory.timestamp).toLocaleDateString() : 'N/A'}</span>
             </div>
           </div>
           <div className="p-3.5 rounded-xl border border-white/5 bg-white/[0.01] glass">
             <div className="text-[10px] text-stone-500 font-mono uppercase mb-1">OCR Accuracy</div>
             <div className="flex items-center space-x-1.5 text-xs">
               <AlertCircle size={13} className="text-stone-400" />
-              <span className="font-semibold text-stone-300">{(memory.confidence * 100).toFixed(0)}% Confidence</span>
+              <span className="font-semibold text-stone-300">{((memory.confidence || 0.95) * 100).toFixed(0)}% Confidence</span>
             </div>
           </div>
           <div className="p-3.5 rounded-xl border border-white/5 bg-white/[0.01] col-span-2 glass">
             <div className="text-[10px] text-stone-500 font-mono uppercase mb-1">System Window Context</div>
             <div className="text-xs text-stone-300 font-medium truncate">
-              {memory.windowTitle}
+              {memory.windowTitle || 'Untitled Window'}
             </div>
           </div>
         </div>
@@ -268,12 +261,12 @@ export default function MemoryDetailModal() {
             <span>Categorization & Tags</span>
           </div>
           <div className="flex flex-wrap gap-2">
-            <span className={`px-2.5 py-1 text-[10px] font-semibold border rounded-lg ${CATEGORY_TAGS_COLORS[memory.category]}`}>
-              {memory.category} Cluster
+            <span className={`px-2.5 py-1 text-[10px] font-semibold border rounded-lg ${memory.category ? (CATEGORY_TAGS_COLORS[memory.category] || 'bg-stone-500/10 text-stone-400') : 'bg-stone-500/10 text-stone-400'}`}>
+              {memory.category || 'General'} Cluster
             </span>
-            {(memory.tags || []).map(tag => (
-              <span key={tag} className="px-2 py-0.5 text-[10px] font-mono text-stone-400 bg-white/5 border border-white/5 rounded-md">
-                #{tag}
+            {(memory.tags || []).map((tag, idx) => (
+              <span key={idx} className="px-2 py-0.5 text-[10px] font-mono text-stone-400 bg-white/5 border border-white/5 rounded-md">
+                #{tag ? String(tag) : ''}
               </span>
             ))}
           </div>
@@ -295,7 +288,7 @@ export default function MemoryDetailModal() {
             </button>
           </div>
           <pre className="w-full max-h-[140px] overflow-y-auto rounded-xl border border-white/5 bg-slate-950 font-mono text-[10px] p-3.5 text-stone-300 leading-relaxed whitespace-pre-wrap select-text">
-            {memory.ocrText}
+            {memory.ocrText || 'No raw OCR text available.'}
           </pre>
         </div>
 
@@ -315,12 +308,12 @@ export default function MemoryDetailModal() {
                 <span className="w-2.5 h-2.5 rounded-full border border-sky-400 bg-sky-950/40 z-10 mt-1" />
                 <div className="flex-1 text-[11px]">
                   <div className="flex items-baseline justify-between">
-                    <span className="font-bold text-stone-200">{evt.action.toUpperCase()}</span>
+                    <span className="font-bold text-stone-200">{(evt?.action || '').toUpperCase()}</span>
                     <span className="text-[9px] font-mono text-stone-500">
-                      {new Date(evt.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                      {evt?.timestamp ? new Date(evt.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : ''}
                     </span>
                   </div>
-                  <p className="text-stone-400 mt-0.5 leading-relaxed font-sans">{evt.details}</p>
+                  <p className="text-stone-400 mt-0.5 leading-relaxed font-sans">{evt?.details || ''}</p>
                 </div>
               </div>
             ))}
@@ -343,18 +336,18 @@ export default function MemoryDetailModal() {
                 >
                   <div className="flex-1 min-w-0 pr-3">
                     <div className="flex items-center space-x-2 text-[10px] text-stone-500 font-mono mb-1">
-                      <span className="w-2 h-2 rounded-full" style={{ backgroundColor: CATEGORY_TAGS_COLORS[m.category] }} />
-                      <span>{m.application} &bull; {m.category}</span>
+                      <span className="w-2 h-2 rounded-full" style={{ backgroundColor: m.category ? (CATEGORY_TAGS_COLORS[m.category] || '#64748b') : '#64748b' }} />
+                      <span>{m.application || 'App'} &bull; {m.category || 'General'}</span>
                     </div>
                     <p className="text-xs font-semibold text-stone-200 truncate group-hover:text-blue-400 transition">
-                      {m.windowTitle}
+                      {m.windowTitle || 'Untitled Window'}
                     </p>
                     <p className="text-[10px] text-stone-400 truncate mt-0.5">
-                      {m.summary}
+                      {m.summary || ''}
                     </p>
                   </div>
                   <span className="text-[10px] font-mono text-blue-400 bg-blue-500/10 border border-blue-500/20 px-2 py-0.5 rounded">
-                    {(m.relWeight * 100).toFixed(0)}% match
+                    {((m.relWeight || 0.5) * 100).toFixed(0)}% match
                   </span>
                 </button>
               ))}
