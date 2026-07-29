@@ -86,7 +86,7 @@ export default function App() {
           <main className="flex-1 relative min-h-0 overflow-hidden">
             {/* 1. Persistent 3D Canvas Layer - Never unmounts! */}
             <div
-              className={`absolute inset-0 p-6 lg:p-8 flex flex-col space-y-4 transition-opacity duration-300 ${
+              className={`absolute inset-0 p-6 lg:p-8 flex flex-col space-y-4 transition-opacity duration-300 ease-in-out ${
                 activeTab === '3d-space' ? 'opacity-100 pointer-events-auto z-10' : 'opacity-0 pointer-events-none z-0'
               }`}
             >
@@ -98,13 +98,15 @@ export default function App() {
             </div>
 
             {/* 2. Sub-View Panels - Rendered over canvas in high z-index container when active */}
-            {activeTab !== '3d-space' && (
-              <div className="absolute inset-0 z-20 overflow-y-auto pointer-events-auto bg-[#050507]/95 p-6 lg:p-8">
-                {activeTab === 'dashboard' && <DashboardHome />}
-                {activeTab === 'list' && <MemoriesGrid />}
-                {activeTab === 'settings' && <SettingsView />}
-              </div>
-            )}
+            <div
+              className={`absolute inset-0 z-20 overflow-y-auto bg-[#050507]/95 backdrop-blur-md p-6 lg:p-8 transition-opacity duration-300 ease-in-out ${
+                activeTab !== '3d-space' ? 'opacity-100 pointer-events-auto' : 'opacity-0 pointer-events-none'
+              }`}
+            >
+              {activeTab === 'dashboard' && <DashboardHome />}
+              {activeTab === 'list' && <MemoriesGrid />}
+              {activeTab === 'settings' && <SettingsView />}
+            </div>
           </main>
         </div>
 

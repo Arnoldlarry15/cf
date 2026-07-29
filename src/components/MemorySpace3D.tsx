@@ -687,21 +687,21 @@ export default function MemorySpace3D() {
               distanceFactor={15}
               zIndexRange={[100, 0]}
             >
-              <div className="bg-[#0a0a0f]/95 border border-blue-500/30 text-stone-200 text-[11px] p-3.5 rounded-xl font-sans shadow-[0_0_25px_rgba(59,130,246,0.35)] whitespace-nowrap pointer-events-auto select-none glass flex flex-col gap-2 min-w-[210px] max-w-[280px]">
+              <div className="bg-[#08080d]/90 backdrop-blur-xl border border-blue-500/35 text-stone-200 text-[11px] p-3.5 rounded-xl font-sans shadow-[0_8px_32px_rgba(0,0,0,0.6),0_0_20px_rgba(59,130,246,0.25)] whitespace-nowrap pointer-events-auto select-none flex flex-col gap-2 min-w-[220px] max-w-[285px] transition-all duration-200 ease-out transform scale-100 opacity-100">
                 <div className="flex items-center justify-between border-b border-white/10 pb-1.5">
-                  <span className="font-bold text-blue-400 uppercase text-[9px] tracking-wider">
+                  <span className="font-bold text-[#38bdf8] font-mono uppercase text-[9px] tracking-wider">
                     {String(activeDisplayMemory.application || activeDisplayMemory.category || 'Memory')}
                   </span>
-                  <span className="text-[9px] text-stone-400">
+                  <span className="text-[9px] text-stone-400 font-mono">
                     {activeDisplayMemory.timestamp
                       ? new Date(activeDisplayMemory.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
                       : ''}
                   </span>
                 </div>
-                <h3 className="text-[11px] text-stone-100 font-semibold truncate">
+                <h3 className="text-[11px] text-stone-100 font-semibold tracking-tight truncate">
                   {String(activeDisplayMemory.windowTitle || (activeDisplayMemory as any).title || 'Untitled Memory')}
                 </h3>
-                <p className="text-[10px] text-stone-400 line-clamp-3 leading-tight whitespace-normal">
+                <p className="text-[10px] text-stone-300 line-clamp-3 leading-relaxed whitespace-normal font-sans">
                   {String(
                     activeDisplayMemory.summary ||
                     activeDisplayMemory.ocrText ||
@@ -712,7 +712,7 @@ export default function MemorySpace3D() {
                 {activeDisplayMemory.tags && activeDisplayMemory.tags.length > 0 && (
                   <div className="flex flex-wrap gap-1 mt-0.5">
                     {activeDisplayMemory.tags.slice(0, 3).map((t, idx) => (
-                      <span key={idx} className="bg-white/10 text-stone-300 text-[8px] px-1.5 py-0.5 rounded font-mono">#{String(t)}</span>
+                      <span key={idx} className="bg-blue-500/10 border border-blue-500/20 text-blue-300 text-[8px] px-1.5 py-0.5 rounded-full font-mono">#{String(t)}</span>
                     ))}
                   </div>
                 )}
@@ -724,7 +724,7 @@ export default function MemorySpace3D() {
                       selectMemory(activeDisplayMemory.id);
                       setGraphFocus(activeDisplayMemory.id);
                     }}
-                    className="bg-blue-600/80 hover:bg-blue-500 text-white text-[9px] px-2.5 py-1 rounded transition-colors font-medium cursor-pointer"
+                    className="bg-blue-600 hover:bg-blue-500 text-white text-[9px] font-semibold px-2.5 py-1 rounded-md transition-all shadow-sm cursor-pointer"
                   >
                     Focus Flight
                   </button>
@@ -733,7 +733,7 @@ export default function MemorySpace3D() {
                       e.stopPropagation();
                       selectMemory(activeDisplayMemory.id);
                     }}
-                    className="bg-white/10 hover:bg-white/20 text-stone-300 text-[9px] px-2.5 py-1 rounded transition-colors font-medium cursor-pointer"
+                    className="bg-white/5 hover:bg-white/15 text-stone-300 hover:text-white border border-white/10 text-[9px] font-medium px-2.5 py-1 rounded-md transition-all cursor-pointer"
                   >
                     Inspect
                   </button>
@@ -744,7 +744,7 @@ export default function MemorySpace3D() {
                         selectMemory(null);
                         setGraphFocus(null);
                       }}
-                      className="bg-stone-800 hover:bg-stone-700 text-stone-400 text-[9px] px-2 py-1 rounded transition-colors cursor-pointer ml-auto"
+                      className="bg-stone-800 hover:bg-stone-700 text-stone-400 hover:text-stone-200 text-[9px] px-2 py-1 rounded-md transition-colors cursor-pointer ml-auto"
                     >
                       Close
                     </button>

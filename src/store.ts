@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 import { Memory, ChatMessage } from './types';
-import { deleteMemoryLocal, updateMemoryLocal } from './services/storageEngine';
+import { deleteMemoryLocal, updateMemoryLocal, saveMemoryLocal, loadMemoriesLocal } from './services/storageEngine';
 import { WriteAheadLog } from './services/writeAheadLog';
 import { API_BASE } from './config';
 
@@ -68,19 +68,25 @@ export const useAppStore = create<AppState>((set, get) => ({
     try {
       if (window.captureflow) {
         const data = await window.captureflow.snippets.get();
-        set({ memories: Array.isArray(data) ? data : [] });
+        const list = Array.isArray(data) ? data : [];
+        set({ memories: list });
+        list.forEach(m => saveMemoryLocal(m));
       } else {
         const res = await fetch(`${API_BASE}/api/memories`);
         if (res.ok) {
           const data = await res.json();
-          set({ memories: Array.isArray(data) ? data : [] });
+          const list = Array.isArray(data) ? data : [];
+          set({ memories: list });
+          list.forEach(m => saveMemoryLocal(m));
         } else {
-          set({ memories: [] });
+          const localList = await loadMemoriesLocal();
+          set({ memories: localList });
         }
       }
     } catch (err) {
-      console.error("Error fetching memories:", err);
-      set({ memories: [] });
+      console.error("Error fetching memories, falling back to local IndexedDB:", err);
+      const localList = await loadMemoriesLocal();
+      set({ memories: localList });
     }
   },
 
