@@ -121,15 +121,31 @@ function InstancedNodes({
     const instanceId = e.instanceId;
     if (instanceId === undefined || instanceId === null) return;
 
-    if (visibleMemories && instanceId >= 0 && instanceId < visibleMemories.length) {
-      const targetNode = visibleMemories[instanceId];
-      if (targetNode && targetNode.id) {
-        onSelectNode(targetNode.id);
-      } else {
-        console.warn(`Click registered on instanceId ${instanceId}, but no matching node was found.`);
+    // Guard 1: Index boundary check
+    if (!visibleMemories || instanceId < 0 || instanceId >= visibleMemories.length) return;
+
+    // Guard 2: Reject NaN or Infinity coordinates from worker/buffer read
+    if (positionsArray) {
+      const i3 = instanceId * 3;
+      if (i3 + 2 < positionsArray.length) {
+        const targetX = positionsArray[i3];
+        const targetY = positionsArray[i3 + 1];
+        const targetZ = positionsArray[i3 + 2];
+
+        if (!Number.isFinite(targetX) || !Number.isFinite(targetY) || !Number.isFinite(targetZ)) {
+          console.warn(`[MemorySpace3D] Invalid target coordinates for node ${instanceId}:`, { targetX, targetY, targetZ });
+          return;
+        }
       }
     }
-  }, [visibleMemories, onSelectNode]);
+
+    const targetNode = visibleMemories[instanceId];
+    if (targetNode && targetNode.id) {
+      onSelectNode(targetNode.id);
+    } else {
+      console.warn(`Click registered on instanceId ${instanceId}, but no matching node was found.`);
+    }
+  }, [visibleMemories, positionsArray, onSelectNode]);
 
   if (count === 0 || !positionsArray || positionsArray.length < count * 3) return null;
 
@@ -152,6 +168,10 @@ function InstancedNodes({
   );
 }
 
+function isFiniteVector(vec: THREE.Vector3 | null | undefined): boolean {
+  return !!vec && Number.isFinite(vec.x) && Number.isFinite(vec.y) && Number.isFinite(vec.z);
+}
+
 // Custom camera controller for smooth focus transitions and free user interaction
 function CameraController({
   positionsMap
@@ -169,36 +189,98 @@ function CameraController({
 
   useEffect(() => {
     if (activeFocusId && positionsMap[activeFocusId] && activeFocusId !== lastFocusId.current) {
-      lastFocusId.current = activeFocusId;
       const nodePos = positionsMap[activeFocusId];
-      targetLookAt.current.copy(nodePos);
-      targetCamPos.current.copy(nodePos).add(new THREE.Vector3(0, 0, 8));
-      isFlying.current = true;
+
+      // Guard 1: Validate target node position
+      if (isFiniteVector(nodePos)) {
+        lastFocusId.current = activeFocusId;
+        targetLookAt.current.copy(nodePos);
+
+        // Guard 2: Compute camera flight target offset safely (prevent zero-distance precision / NaN error)
+        const offset = new THREE.Vector3().subVectors(camera.position, nodePos);
+        if (offset.lengthSq() < 0.0001) {
+          offset.set(0, 0, 5);
+        } else {
+          offset.normalize().multiplyScalar(5);
+        }
+
+        const destination = new THREE.Vector3().addVectors(nodePos, offset);
+        if (isFiniteVector(destination)) {
+          targetCamPos.current.copy(destination);
+          isFlying.current = true;
+
+          // Guard 3: Explicitly lock/reset OrbitControls target before flight
+          if (controlsRef.current) {
+            controlsRef.current.target.copy(nodePos);
+          }
+        }
+      } else {
+        console.warn(`[MemorySpace3D] Invalid target coordinates for focus node ${activeFocusId}:`, nodePos);
+      }
     } else if (!activeFocusId && Object.keys(positionsMap).length > 0 && lastFocusId.current !== 'default') {
       lastFocusId.current = 'default';
       const center = new THREE.Vector3();
       const nodeKeys = Object.keys(positionsMap);
-      nodeKeys.forEach(k => center.add(positionsMap[k]));
-      center.divideScalar(nodeKeys.length);
+      let validCount = 0;
+      nodeKeys.forEach(k => {
+        const p = positionsMap[k];
+        if (isFiniteVector(p)) {
+          center.add(p);
+          validCount++;
+        }
+      });
+      if (validCount > 0) {
+        center.divideScalar(validCount);
+        targetLookAt.current.copy(center);
+        targetCamPos.current.set(center.x, center.y, center.z + 25);
+        isFlying.current = true;
 
-      targetLookAt.current.copy(center);
-      targetCamPos.current.set(center.x, center.y, center.z + 24);
-      isFlying.current = true;
+        if (controlsRef.current) {
+          controlsRef.current.target.copy(center);
+        }
+      }
     }
-  }, [activeFocusId, positionsMap]);
+  }, [activeFocusId, positionsMap, camera.position]);
 
   useFrame(() => {
     if (!controlsRef.current) return;
 
     if (isFlying.current) {
+      // Guard 4: Validate flight targets before lerping
+      if (!isFiniteVector(targetCamPos.current) || !isFiniteVector(targetLookAt.current)) {
+        console.warn('[MemorySpace3D] Target vector contained NaN/Infinity, cancelling flight');
+        isFlying.current = false;
+        return;
+      }
+
       camera.position.lerp(targetCamPos.current, 0.08);
       controlsRef.current.target.lerp(targetLookAt.current, 0.08);
+
+      // Guard 5: Safety check for NaN camera vector & view matrix recovery
+      if (!isFiniteVector(camera.position) || !isFiniteVector(controlsRef.current.target)) {
+        console.warn('[MemorySpace3D] Camera position became NaN during lerp, resetting to default');
+        camera.position.set(0, 0, 25);
+        controlsRef.current.target.set(0, 0, 0);
+        isFlying.current = false;
+        controlsRef.current.update();
+        return;
+      }
+
       controlsRef.current.update();
 
       const distCam = camera.position.distanceTo(targetCamPos.current);
       const distTarget = controlsRef.current.target.distanceTo(targetLookAt.current);
-      if (distCam < 0.05 && distTarget < 0.05) {
-        isFlying.current = false; // Target flight complete! Hand control back to OrbitControls
+
+      // Guard 6: Release controls if lerp distance gets stuck or hits boundary/NaN
+      if (
+        isNaN(distCam) ||
+        isNaN(distTarget) ||
+        !Number.isFinite(distCam) ||
+        !Number.isFinite(distTarget) ||
+        (distCam < 0.05 && distTarget < 0.05)
+      ) {
+        isFlying.current = false;
+        if (controlsRef.current) controlsRef.current.update();
       }
     } else {
       controlsRef.current.update();
@@ -468,14 +550,17 @@ export default function MemorySpace3D() {
     if (!positionsArray || !visibleMemories) return map;
 
     (visibleMemories || []).forEach((m, idx) => {
-      if (!m) return;
+      if (!m || !m.id) return;
       const idx3 = idx * 3;
-      const posVec = new THREE.Vector3(
-        positionsArray[idx3],
-        positionsArray[idx3 + 1],
-        positionsArray[idx3 + 2]
-      );
-      map[m.id] = posVec;
+      if (idx3 + 2 >= positionsArray.length) return;
+
+      const x = positionsArray[idx3];
+      const y = positionsArray[idx3 + 1];
+      const z = positionsArray[idx3 + 2];
+
+      if (Number.isFinite(x) && Number.isFinite(y) && Number.isFinite(z)) {
+        map[m.id] = new THREE.Vector3(x, y, z);
+      }
     });
 
     // Save positions locally to IndexedDB for zero-latency resume
@@ -524,122 +609,154 @@ export default function MemorySpace3D() {
     ? visibleMemories[hoveredIndex]
     : null;
 
-  const activeDisplayMemory = hoveredMemory || (selectedMemoryId ? visibleMemories.find(m => m.id === selectedMemoryId) : null);
-  const activeDisplayPosition = (activeDisplayMemory && activeDisplayMemory.id) ? positionsMap[activeDisplayMemory.id] : null;
+  const activeDisplayMemory = hoveredMemory || (selectedMemoryId ? visibleMemories.find(m => m && m.id === selectedMemoryId) : null);
+
+  const activeDisplayPosition = useMemo(() => {
+    if (!activeDisplayMemory || !activeDisplayMemory.id) return null;
+    const pos = positionsMap[activeDisplayMemory.id];
+    if (pos && Number.isFinite(pos.x) && Number.isFinite(pos.y) && Number.isFinite(pos.z)) {
+      return pos;
+    }
+    return null;
+  }, [activeDisplayMemory, positionsMap]);
 
   return (
     <div className="w-full h-full relative bg-gradient-to-tr from-[#e0f2fe] via-[#fafbfd] to-[#fae8ff]">
-      <Canvas
-        camera={{ position: [0, 0, 25], fov: 60 }}
-        gl={{ antialias: true }}
-      >
-        <fog attach="fog" args={["#f8fafc", 15, 55]} />
+      <ThreeCanvasErrorBoundary>
+        <Canvas
+          camera={{ position: [0, 0, 25], fov: 60 }}
+          gl={{ antialias: true }}
+        >
+          <fog attach="fog" args={["#f8fafc", 15, 55]} />
 
-        <ambientLight intensity={0.85} />
-        <directionalLight position={[15, 20, 10]} intensity={1.6} color="#fffdfa" />
-        <directionalLight position={[-15, -10, -10]} intensity={0.6} color="#e2f1ff" />
+          <ambientLight intensity={0.85} />
+          <directionalLight position={[15, 20, 10]} intensity={1.6} color="#fffdfa" />
+          <directionalLight position={[-15, -10, -10]} intensity={0.6} color="#e2f1ff" />
 
-        <pointLight position={[-12, 4, -6]} color="#F43F5E" intensity={2.0} distance={30} decay={1.3} />
-        <pointLight position={[12, -4, 6]} color="#0EA5E9" intensity={2.0} distance={30} decay={1.3} />
-        <pointLight position={[-3, 12, 5]} color="#10B981" intensity={1.5} distance={30} decay={1.3} />
-        <pointLight position={[6, -10, -8]} color="#F59E0B" intensity={2.0} distance={30} decay={1.3} />
-        <pointLight position={[-8, -6, 12]} color="#8B5CF6" intensity={2.0} distance={30} decay={1.3} />
+          <pointLight position={[-12, 4, -6]} color="#F43F5E" intensity={2.0} distance={30} decay={1.3} />
+          <pointLight position={[12, -4, 6]} color="#0EA5E9" intensity={2.0} distance={30} decay={1.3} />
+          <pointLight position={[-3, 12, 5]} color="#10B981" intensity={1.5} distance={30} decay={1.3} />
+          <pointLight position={[6, -10, -8]} color="#F59E0B" intensity={2.0} distance={30} decay={1.3} />
+          <pointLight position={[-8, -6, 12]} color="#8B5CF6" intensity={2.0} distance={30} decay={1.3} />
 
-        <Stars radius={120} depth={50} count={3500} factor={5} saturation={1.0} fade speed={1.2} />
-        <Sparkles count={200} scale={35} size={2.5} speed={0.4} color="#f59e0b" opacity={0.75} />
-        <Sparkles count={150} scale={30} size={1.8} speed={0.3} color="#06b6d4" opacity={0.7} />
-        <Sparkles count={100} scale={32} size={1.5} speed={0.5} color="#ec4899" opacity={0.6} />
+          <Stars radius={120} depth={50} count={3500} factor={5} saturation={1.0} fade speed={1.2} />
+          <Sparkles count={200} scale={35} size={2.5} speed={0.4} color="#f59e0b" opacity={0.75} />
+          <Sparkles count={150} scale={30} size={1.8} speed={0.3} color="#06b6d4" opacity={0.7} />
+          <Sparkles count={100} scale={32} size={1.5} speed={0.5} color="#ec4899" opacity={0.6} />
 
-        <TechnoParadiseBackground />
+          <TechnoParadiseBackground />
 
-        {/* Instanced Mesh Node Renderer */}
-        <InstancedNodes
-          visibleMemories={visibleMemories}
-          positionsArray={positionsArray}
-          selectedMemoryId={selectedMemoryId}
-          activeGraphFocusId={activeGraphFocusId}
-          hoveredIndex={hoveredIndex}
-          onSelectNode={(id) => {
-            if (!id) return;
-            selectMemory(id);
-            setGraphFocus(id);
-            // Log interaction into WAL queue
-            WriteAheadLog.getInstance().append('UPDATE_NODE', { selectedId: id });
-          }}
-          onHoverNode={(index) => setHoveredIndex(index)}
-        />
-
-        {/* Render Connection Edges */}
-        {edges.map(edge => (
-          <GraphEdgeLine
-            key={edge.id}
-            start={edge.start}
-            end={edge.end}
-            weight={edge.weight}
-            highlight={edge.highlight}
-            color={edge.color}
+          {/* Instanced Mesh Node Renderer */}
+          <InstancedNodes
+            visibleMemories={visibleMemories}
+            positionsArray={positionsArray}
+            selectedMemoryId={selectedMemoryId}
+            activeGraphFocusId={activeGraphFocusId}
+            hoveredIndex={hoveredIndex}
+            onSelectNode={(id) => {
+              if (!id) return;
+              selectMemory(id);
+              setGraphFocus(id);
+              // Log interaction into WAL queue
+              WriteAheadLog.getInstance().append('UPDATE_NODE', { selectedId: id });
+            }}
+            onHoverNode={(index) => setHoveredIndex(index)}
           />
-        ))}
 
-        {/* Dynamic 3D-to-2D Spatial HUD Action Menu Overlay */}
-        {activeDisplayMemory && activeDisplayPosition && (
-          <Html position={[activeDisplayPosition.x, activeDisplayPosition.y + 1.2, activeDisplayPosition.z]} center distanceFactor={10}>
-            <div className="bg-[#0a0a0f]/95 border border-blue-500/30 text-stone-200 text-[11px] p-3 rounded-xl font-sans shadow-[0_0_25px_rgba(59,130,246,0.35)] whitespace-nowrap pointer-events-auto select-none glass flex flex-col gap-2 min-w-[210px] max-w-[280px]">
-              <div className="flex items-center justify-between border-b border-white/10 pb-1.5">
-                <span className="font-bold text-blue-400 uppercase text-[9px] tracking-wider">{activeDisplayMemory.application}</span>
-                <span className="text-[9px] text-stone-400">{new Date(activeDisplayMemory.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
-              </div>
-              <p className="text-[11px] text-stone-100 font-semibold truncate">{activeDisplayMemory.windowTitle}</p>
-              {activeDisplayMemory.summary && (
-                <p className="text-[10px] text-stone-400 line-clamp-2 leading-tight whitespace-normal">{activeDisplayMemory.summary}</p>
-              )}
-              {activeDisplayMemory.tags && activeDisplayMemory.tags.length > 0 && (
-                <div className="flex flex-wrap gap-1 mt-0.5">
-                  {activeDisplayMemory.tags.slice(0, 3).map((t, idx) => (
-                    <span key={idx} className="bg-white/10 text-stone-300 text-[8px] px-1.5 py-0.5 rounded font-mono">#{t}</span>
-                  ))}
+          {/* Render Connection Edges */}
+          {edges.map(edge => (
+            <GraphEdgeLine
+              key={edge.id}
+              start={edge.start}
+              end={edge.end}
+              weight={edge.weight}
+              highlight={edge.highlight}
+              color={edge.color}
+            />
+          ))}
+
+          {/* Dynamic 3D-to-2D Spatial HUD Action Menu Overlay */}
+          {activeDisplayMemory && activeDisplayPosition && (
+            <Html
+              position={[
+                Number.isFinite(activeDisplayPosition.x) ? activeDisplayPosition.x : 0,
+                Number.isFinite(activeDisplayPosition.y) ? activeDisplayPosition.y + 1.2 : 1.2,
+                Number.isFinite(activeDisplayPosition.z) ? activeDisplayPosition.z : 0
+              ]}
+              center
+              distanceFactor={15}
+              zIndexRange={[100, 0]}
+            >
+              <div className="bg-[#0a0a0f]/95 border border-blue-500/30 text-stone-200 text-[11px] p-3.5 rounded-xl font-sans shadow-[0_0_25px_rgba(59,130,246,0.35)] whitespace-nowrap pointer-events-auto select-none glass flex flex-col gap-2 min-w-[210px] max-w-[280px]">
+                <div className="flex items-center justify-between border-b border-white/10 pb-1.5">
+                  <span className="font-bold text-blue-400 uppercase text-[9px] tracking-wider">
+                    {String(activeDisplayMemory.application || activeDisplayMemory.category || 'Memory')}
+                  </span>
+                  <span className="text-[9px] text-stone-400">
+                    {activeDisplayMemory.timestamp
+                      ? new Date(activeDisplayMemory.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+                      : ''}
+                  </span>
                 </div>
-              )}
-              
-              <div className="flex items-center gap-1.5 mt-1 pt-1.5 border-t border-white/10">
-                <button
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    selectMemory(activeDisplayMemory.id);
-                    setGraphFocus(activeDisplayMemory.id);
-                  }}
-                  className="bg-blue-600/80 hover:bg-blue-500 text-white text-[9px] px-2.5 py-1 rounded transition-colors font-medium cursor-pointer"
-                >
-                  Focus Flight
-                </button>
-                <button
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    selectMemory(activeDisplayMemory.id);
-                  }}
-                  className="bg-white/10 hover:bg-white/20 text-stone-300 text-[9px] px-2.5 py-1 rounded transition-colors font-medium cursor-pointer"
-                >
-                  Inspect
-                </button>
-                {selectedMemoryId === activeDisplayMemory.id && (
+                <h3 className="text-[11px] text-stone-100 font-semibold truncate">
+                  {String(activeDisplayMemory.windowTitle || (activeDisplayMemory as any).title || 'Untitled Memory')}
+                </h3>
+                <p className="text-[10px] text-stone-400 line-clamp-3 leading-tight whitespace-normal">
+                  {String(
+                    activeDisplayMemory.summary ||
+                    activeDisplayMemory.ocrText ||
+                    (activeDisplayMemory as any).content ||
+                    'No preview available'
+                  )}
+                </p>
+                {activeDisplayMemory.tags && activeDisplayMemory.tags.length > 0 && (
+                  <div className="flex flex-wrap gap-1 mt-0.5">
+                    {activeDisplayMemory.tags.slice(0, 3).map((t, idx) => (
+                      <span key={idx} className="bg-white/10 text-stone-300 text-[8px] px-1.5 py-0.5 rounded font-mono">#{String(t)}</span>
+                    ))}
+                  </div>
+                )}
+                
+                <div className="flex items-center gap-1.5 mt-1 pt-1.5 border-t border-white/10">
                   <button
                     onClick={(e) => {
                       e.stopPropagation();
-                      selectMemory(null);
-                      setGraphFocus(null);
+                      selectMemory(activeDisplayMemory.id);
+                      setGraphFocus(activeDisplayMemory.id);
                     }}
-                    className="bg-stone-800 hover:bg-stone-700 text-stone-400 text-[9px] px-2 py-1 rounded transition-colors cursor-pointer ml-auto"
+                    className="bg-blue-600/80 hover:bg-blue-500 text-white text-[9px] px-2.5 py-1 rounded transition-colors font-medium cursor-pointer"
                   >
-                    Close
+                    Focus Flight
                   </button>
-                )}
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      selectMemory(activeDisplayMemory.id);
+                    }}
+                    className="bg-white/10 hover:bg-white/20 text-stone-300 text-[9px] px-2.5 py-1 rounded transition-colors font-medium cursor-pointer"
+                  >
+                    Inspect
+                  </button>
+                  {selectedMemoryId === activeDisplayMemory.id && (
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        selectMemory(null);
+                        setGraphFocus(null);
+                      }}
+                      className="bg-stone-800 hover:bg-stone-700 text-stone-400 text-[9px] px-2 py-1 rounded transition-colors cursor-pointer ml-auto"
+                    >
+                      Close
+                    </button>
+                  )}
+                </div>
               </div>
-            </div>
-          </Html>
-        )}
+            </Html>
+          )}
 
-        <CameraController positionsMap={positionsMap} />
-      </Canvas>
+          <CameraController positionsMap={positionsMap} />
+        </Canvas>
+      </ThreeCanvasErrorBoundary>
 
       {/* Floating Category Legend */}
       <div className="absolute top-4 left-4 p-4 rounded-xl border border-white/5 bg-[#0a0a0f]/80 backdrop-blur-md pointer-events-none glass shadow-xl">
@@ -656,3 +773,45 @@ export default function MemorySpace3D() {
     </div>
   );
 }
+
+// React Error Boundary for 3D Canvas
+class ThreeCanvasErrorBoundary extends React.Component<
+  { children: React.ReactNode },
+  { hasError: boolean; error: Error | null }
+> {
+  constructor(props: { children: React.ReactNode }) {
+    super(props);
+    this.state = { hasError: false, error: null };
+  }
+
+  static getDerivedStateFromError(error: Error) {
+    return { hasError: true, error };
+  }
+
+  componentDidCatch(error: Error, errorInfo: React.ErrorInfo) {
+    console.error('[MemorySpace3D ErrorBoundary] Caught exception in 3D canvas:', error, errorInfo);
+  }
+
+  render() {
+    if (this.state.hasError) {
+      return (
+        <div className="w-full h-full flex flex-col items-center justify-center bg-[#0a0a0f] text-stone-300 p-6 text-center space-y-4 rounded-2xl border border-red-500/20">
+          <div className="p-4 bg-red-500/10 border border-red-500/30 rounded-xl max-w-md">
+            <p className="text-xs font-bold text-red-400 uppercase tracking-wider">3D Mindmap Renderer Interrupted</p>
+            <p className="text-[11px] text-stone-400 mt-2 font-mono leading-relaxed">
+              {this.state.error?.message || 'A WebGL matrix panic or animation frame exception occurred.'}
+            </p>
+          </div>
+          <button
+            onClick={() => this.setState({ hasError: false, error: null })}
+            className="px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white text-xs font-semibold rounded-lg transition-colors cursor-pointer shadow-lg"
+          >
+            Reset 3D Mindmap View
+          </button>
+        </div>
+      );
+    }
+    return this.props.children;
+  }
+}
+
