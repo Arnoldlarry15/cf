@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
-import { Sparkles, Layers, Info, AlertTriangle } from 'lucide-react';
+import { Sparkles, Layers, Info, Command, Minus, Square, X, Database, Activity } from 'lucide-react';
 import { useAppStore } from './store';
+import { SyncEngine, SyncStatus } from './services/syncEngine';
 
 // Component imports
 import Sidebar from './components/Sidebar';
@@ -11,6 +12,7 @@ import MemoriesGrid from './components/MemoriesGrid';
 import SettingsView from './components/SettingsView';
 import AIChatPanel from './components/AIChatPanel';
 import MemoryDetailModal from './components/MemoryDetailModal';
+import CommandPalette from './components/CommandPalette';
 
 export default function App() {
   const activeTab = useAppStore(state => state.activeTab);
@@ -19,15 +21,32 @@ export default function App() {
   const selectedMemoryId = useAppStore(state => state.selectedMemoryId);
   const selectMemory = useAppStore(state => state.selectMemory);
 
-  // Split-panel right sidebar tabs: 'assistant' or 'inspector'
+  // Right sidebar tabs: 'assistant' or 'inspector'
   const [rightTab, setRightTab] = useState<'assistant' | 'inspector'>('assistant');
+  const [isCommandPaletteOpen, setIsCommandPaletteOpen] = useState(false);
+  const [syncStatus, setSyncStatus] = useState<SyncStatus>({
+    isSyncing: false,
+    pendingCount: 0,
+    lastSyncTime: null,
+    isOnline: true
+  });
 
-  // Global Escape key listener using capture phase to catch Esc before inner inputs swallow it
+  // Subscribe to background SyncEngine WAL status updates
+  useEffect(() => {
+    const syncEngine = SyncEngine.getInstance();
+    const unsubscribe = syncEngine.subscribe((status) => {
+      setSyncStatus(status);
+    });
+    return unsubscribe;
+  }, []);
+
+  // Global keyboard shortcuts (Ctrl+K for Command Palette, Esc for Dashboard return)
   useEffect(() => {
     const handleGlobalKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') {
-        e.stopPropagation();
-        // Force return to default dashboard state and clear selected node
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k') {
+        e.preventDefault();
+        setIsCommandPaletteOpen(prev => !prev);
+      } else if (e.key === 'Escape' && !isCommandPaletteOpen) {
         setActiveTab('dashboard');
         selectMemory(null);
       }
@@ -35,7 +54,7 @@ export default function App() {
 
     window.addEventListener('keydown', handleGlobalKeyDown, true);
     return () => window.removeEventListener('keydown', handleGlobalKeyDown, true);
-  }, [setActiveTab, selectMemory]);
+  }, [setActiveTab, selectMemory, isCommandPaletteOpen]);
 
   // Trigger initial database fetch and subscribe to Electron updates
   useEffect(() => {
@@ -56,17 +75,86 @@ export default function App() {
   }, [selectedMemoryId]);
 
   return (
-    <div className="w-screen h-screen overflow-hidden bg-[#050507] graph-bg text-[#e0e0e0] font-sans flex select-none">
-      {/* 12-Column Layout */}
-      <div className="flex-1 flex h-full relative">
-        {/* Left Side Sidebar (Width: 256px / 64) */}
+    <div className="w-screen h-screen overflow-hidden bg-[#050507] graph-bg text-[#e0e0e0] font-sans flex flex-col select-none">
+      {/* Frameless Glassmorphic Header & Title Bar */}
+      <header 
+        className="h-10 bg-[#08080d]/90 backdrop-blur-xl border-b border-white/5 flex items-center justify-between px-3 shrink-0 z-40"
+        style={{ WebkitAppRegion: 'drag' } as any}
+      >
+        {/* Left: Brand Badge & Project Metadata */}
+        <div className="flex items-center space-x-2.5" style={{ WebkitAppRegion: 'no-drag' } as any}>
+          <div className="flex items-center space-x-1.5 px-2 py-0.5 rounded-md bg-blue-500/10 border border-blue-500/20">
+            <span className="w-2 h-2 rounded-full bg-cyan-400 animate-pulse shadow-[0_0_8px_#38bdf8]" />
+            <span className="text-[10px] font-bold font-mono text-cyan-300 tracking-wider">LA BUILDS</span>
+          </div>
+          <span className="text-xs font-bold text-stone-200">CaptureFlow</span>
+          <span className="text-[9px] font-mono text-stone-500 bg-white/5 px-1.5 py-0.5 rounded border border-white/5">v1.0.0</span>
+        </div>
+
+        {/* Center: Command Search Trigger */}
+        <div className="flex items-center space-x-3" style={{ WebkitAppRegion: 'no-drag' } as any}>
+          <button
+            onClick={() => setIsCommandPaletteOpen(true)}
+            className="flex items-center space-x-2 px-3 py-1 bg-white/5 hover:bg-white/10 border border-white/10 rounded-lg text-xs text-stone-400 hover:text-stone-200 transition-all cursor-pointer shadow-sm"
+          >
+            <Command size={12} className="text-cyan-400" />
+            <span>Search or command...</span>
+            <kbd className="px-1.5 py-0.5 text-[9px] bg-stone-800 rounded border border-stone-700 text-stone-400 font-mono">Ctrl+K</kbd>
+          </button>
+        </div>
+
+        {/* Right: Sync Status Micro Badge & Window Controls */}
+        <div className="flex items-center space-x-3" style={{ WebkitAppRegion: 'no-drag' } as any}>
+          {/* Live Sync Status Pill */}
+          <div className="flex items-center space-x-2 px-2.5 py-1 rounded-md bg-white/[0.03] border border-white/5 text-[10px] font-mono">
+            <Database size={11} className="text-emerald-400 shrink-0" />
+            <span className="text-emerald-400 hidden sm:inline">IndexedDB: Active (0ms)</span>
+            <span className="text-stone-600 hidden sm:inline">|</span>
+            <Activity size={11} className={syncStatus.isSyncing ? 'text-amber-400 animate-spin' : syncStatus.isOnline ? 'text-cyan-400' : 'text-stone-500'} />
+            <span className={syncStatus.isSyncing ? 'text-amber-400' : syncStatus.isOnline ? 'text-cyan-400' : 'text-stone-400'}>
+              {syncStatus.isSyncing ? 'Syncing WAL...' : syncStatus.pendingCount > 0 ? `WAL Queue (${syncStatus.pendingCount})` : 'WAL Synced'}
+            </span>
+          </div>
+
+          {/* Window Frame Control Buttons */}
+          {window.captureflow && (
+            <div className="flex items-center space-x-1 border-l border-white/10 pl-2">
+              <button
+                onClick={() => window.captureflow?.window?.minimize()}
+                className="p-1 hover:bg-white/10 rounded text-stone-400 hover:text-white transition-colors cursor-pointer"
+                title="Minimize"
+              >
+                <Minus size={12} />
+              </button>
+              <button
+                onClick={() => window.captureflow?.window?.maximize()}
+                className="p-1 hover:bg-white/10 rounded text-stone-400 hover:text-white transition-colors cursor-pointer"
+                title="Maximize"
+              >
+                <Square size={11} />
+              </button>
+              <button
+                onClick={() => window.captureflow?.window?.close()}
+                className="p-1 hover:bg-red-500/20 hover:text-red-400 rounded text-stone-400 transition-colors cursor-pointer"
+                title="Close"
+              >
+                <X size={12} />
+              </button>
+            </div>
+          )}
+        </div>
+      </header>
+
+      {/* Main Workspace Body */}
+      <div className="flex-1 flex h-full min-h-0 relative">
+        {/* Left Side Sidebar */}
         <Sidebar />
 
-        {/* Center Main Workspace (Flexible) */}
+        {/* Center Content Workspace */}
         <div className="flex-1 flex flex-col min-w-0 h-full overflow-hidden relative">
-          {/* Global Header / Back Button */}
+          {/* View Back Button Header */}
           {activeTab !== 'dashboard' && (
-            <header className="px-6 pt-4 pb-2 border-b border-white/5 flex items-center justify-between bg-[#050507]/90 backdrop-blur-md z-30 relative shrink-0">
+            <header className="px-6 pt-3 pb-2 border-b border-white/5 flex items-center justify-between bg-[#050507]/90 backdrop-blur-md z-30 relative shrink-0">
               <button
                 onClick={() => {
                   setActiveTab('dashboard');
@@ -97,7 +185,7 @@ export default function App() {
               <TimelineScrubber />
             </div>
 
-            {/* 2. Sub-View Panels - Rendered over canvas in high z-index container when active */}
+            {/* 2. Sub-View Panels */}
             <div
               className={`absolute inset-0 z-20 overflow-y-auto bg-[#050507]/95 backdrop-blur-md p-6 lg:p-8 transition-opacity duration-300 ease-in-out ${
                 activeTab !== '3d-space' ? 'opacity-100 pointer-events-auto' : 'opacity-0 pointer-events-none'
@@ -110,8 +198,8 @@ export default function App() {
           </main>
         </div>
 
-        {/* Right Side Sidebar Panel: AI Assistant and Inspector Details (Width: 360px / 90) */}
-        <div className="w-90 h-full bg-[#050507]/95 border-l border-white/5 flex flex-col shadow-2xl relative backdrop-blur-xl">
+        {/* Right Side Sidebar Panel: AI Assistant and Inspector Details */}
+        <div className="w-90 h-full bg-[#050507]/95 border-l border-white/5 flex flex-col shadow-2xl relative backdrop-blur-xl shrink-0">
           {/* Dual Tab Controller Header */}
           <div className="flex border-b border-white/5 p-2 bg-white/[0.01]">
             <button
@@ -168,6 +256,12 @@ export default function App() {
           </div>
         </div>
       </div>
+
+      {/* Global Command Palette Overlay (Ctrl+K) */}
+      <CommandPalette
+        isOpen={isCommandPaletteOpen}
+        onClose={() => setIsCommandPaletteOpen(false)}
+      />
     </div>
   );
 }

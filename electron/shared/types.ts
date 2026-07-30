@@ -69,4 +69,10 @@ export interface CaptureFlowAPI {
       message?: string;
     }>;
   };
+  window?: {
+    minimize: () => void;
+    maximize: () => void;
+    close: () => void;
+    isMaximized: () => Promise<boolean>;
+  };
 }

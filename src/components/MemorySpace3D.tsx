@@ -444,6 +444,36 @@ export default function MemorySpace3D() {
     return (memories || []).filter(m => m && m.timestamp && new Date(m.timestamp).getTime() <= cutOffTime);
   }, [memories, cutOffTime]);
 
+  // Keyboard spatial 3D navigation (ArrowKeys to step focus between nodes)
+  useEffect(() => {
+    const handleSpatialKeyDown = (e: KeyboardEvent) => {
+      const targetTag = (e.target as HTMLElement)?.tagName?.toLowerCase();
+      if (targetTag === 'input' || targetTag === 'textarea') return;
+
+      if (['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown'].includes(e.key)) {
+        if (!visibleMemories || visibleMemories.length === 0) return;
+        e.preventDefault();
+        const currentIdx = visibleMemories.findIndex(m => m.id === selectedMemoryId);
+        let nextIdx = 0;
+        if (currentIdx >= 0) {
+          if (e.key === 'ArrowRight' || e.key === 'ArrowDown') {
+            nextIdx = (currentIdx + 1) % visibleMemories.length;
+          } else {
+            nextIdx = (currentIdx - 1 + visibleMemories.length) % visibleMemories.length;
+          }
+        }
+        const nextMem = visibleMemories[nextIdx];
+        if (nextMem && nextMem.id) {
+          selectMemory(nextMem.id);
+          setGraphFocus(nextMem.id);
+        }
+      }
+    };
+
+    window.addEventListener('keydown', handleSpatialKeyDown);
+    return () => window.removeEventListener('keydown', handleSpatialKeyDown);
+  }, [visibleMemories, selectedMemoryId, selectMemory, setGraphFocus]);
+
   // Web Worker force layout initialization & ping-pong zero-copy messaging
   const workerRef = useRef<Worker | null>(null);
 
@@ -622,7 +652,7 @@ export default function MemorySpace3D() {
           camera={{ position: [0, 0, 25], fov: 60 }}
           gl={{ antialias: true }}
         >
-          <fog attach="fog" args={["#f8fafc", 15, 55]} />
+          <fog attach="fog" args={["#08080d", 15, 60]} />
 
           <ambientLight intensity={1.5} />
           <directionalLight position={[15, 20, 10]} intensity={1.6} color="#fffdfa" />
@@ -669,6 +699,17 @@ export default function MemorySpace3D() {
               color={edge.color}
             />
           ))}
+
+          {/* Active Selection Ring / Halo Indicator */}
+          {selectedPosition && isFiniteVector(selectedPosition) && (
+            <group position={selectedPosition}>
+              <mesh>
+                <torusGeometry args={[0.85, 0.03, 16, 64]} />
+                <meshBasicMaterial color="#38BDF8" wireframe />
+              </mesh>
+              <pointLight color="#38BDF8" intensity={1.5} distance={6} />
+            </group>
+          )}
 
           {/* Screen projection tracker for 2D decoupled overlay */}
           <HudProjectionTracker activePosition={selectedPosition} onProject={setHudScreenPos} />
