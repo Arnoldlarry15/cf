@@ -11,14 +11,19 @@ import { saveMemoryLocal, saveNodePositionsLocal } from '../services/storageEngi
 
 // App colors
 const CATEGORY_COLORS: Record<string, string> = {
-  Design: '#F43F5E',       // Rose
-  Dev: '#0EA5E9',          // Sky
-  Productivity: '#10B981', // Emerald
-  Work: '#F59E0B',         // Amber
-  Leisure: '#8B5CF6',      // Violet
+  design: '#F43F5E',       // Rose
+  dev: '#0EA5E9',          // Sky
+  productivity: '#10B981', // Emerald
+  work: '#F59E0B',         // Amber
+  leisure: '#8B5CF6',      // Violet
+  code: '#0EA5E9',         // Sky
+  research: '#8B5CF6',     // Violet
+  doc: '#10B981',          // Emerald
+  convo: '#F59E0B',        // Amber
+  default: '#38BDF8',      // Bright Cyan fallback (guarantees visibility)
 };
 
-const DEFAULT_COLOR = '#64748B';
+const DEFAULT_COLOR = '#38BDF8';
 
 const ANCHORS: Record<string, THREE.Vector3> = {
   Design: new THREE.Vector3(-10, 2, -5),
@@ -83,7 +88,8 @@ function InstancedNodes({
       );
       instancedMesh.setMatrixAt(i, dummyMatrix);
 
-      const baseHex = (memory.category && CATEGORY_COLORS[memory.category]) || DEFAULT_COLOR;
+      const catKey = (memory.category || (memory as any).type || '').toLowerCase();
+      const baseHex = CATEGORY_COLORS[catKey] || CATEGORY_COLORS.default;
       if (isSelected || isHovered) {
         dummyColor.set('#FAFAF9');
       } else {
@@ -415,6 +421,7 @@ export default function MemorySpace3D() {
 
   const [hoveredIndex, setHoveredIndex] = useState<number | null>(null);
   const [positionsArray, setPositionsArray] = useState<Float32Array | null>(null);
+  const [hudScreenPos, setHudScreenPos] = useState<{ x: number; y: number } | null>(null);
 
   // Initialize Background Sync Engine for offline WAL flushing
   useEffect(() => {
@@ -605,20 +612,8 @@ export default function MemorySpace3D() {
     return list;
   }, [visibleMemories, positionsMap, selectedMemoryId]);
 
-  const hoveredMemory = (hoveredIndex !== null && hoveredIndex >= 0 && visibleMemories && hoveredIndex < visibleMemories.length)
-    ? visibleMemories[hoveredIndex]
-    : null;
-
-  const activeDisplayMemory = hoveredMemory || (selectedMemoryId ? visibleMemories.find(m => m && m.id === selectedMemoryId) : null);
-
-  const activeDisplayPosition = useMemo(() => {
-    if (!activeDisplayMemory || !activeDisplayMemory.id) return null;
-    const pos = positionsMap[activeDisplayMemory.id];
-    if (pos && Number.isFinite(pos.x) && Number.isFinite(pos.y) && Number.isFinite(pos.z)) {
-      return pos;
-    }
-    return null;
-  }, [activeDisplayMemory, positionsMap]);
+  const selectedMemory = selectedMemoryId ? visibleMemories.find(m => m && m.id === selectedMemoryId) : null;
+  const selectedPosition = (selectedMemory && selectedMemory.id) ? positionsMap[selectedMemory.id] : null;
 
   return (
     <div className="w-full h-full relative bg-gradient-to-tr from-[#e0f2fe] via-[#fafbfd] to-[#fae8ff]">
@@ -629,7 +624,7 @@ export default function MemorySpace3D() {
         >
           <fog attach="fog" args={["#f8fafc", 15, 55]} />
 
-          <ambientLight intensity={0.85} />
+          <ambientLight intensity={1.5} />
           <directionalLight position={[15, 20, 10]} intensity={1.6} color="#fffdfa" />
           <directionalLight position={[-15, -10, -10]} intensity={0.6} color="#e2f1ff" />
 
@@ -675,96 +670,87 @@ export default function MemorySpace3D() {
             />
           ))}
 
-          {/* Dynamic 3D-to-2D Spatial HUD Action Menu Overlay */}
-          {activeDisplayMemory && activeDisplayPosition && (
-            <Html
-              position={[
-                Number.isFinite(activeDisplayPosition.x) ? activeDisplayPosition.x : 0,
-                Number.isFinite(activeDisplayPosition.y) ? activeDisplayPosition.y + 0.8 : 0.8,
-                Number.isFinite(activeDisplayPosition.z) ? activeDisplayPosition.z : 0
-              ]}
-              center
-              distanceFactor={9}
-              zIndexRange={[100, 0]}
-              className="pointer-events-none select-none z-50"
-              ref={(node) => {
-                if (node && (node as any).parentElement) {
-                  (node as any).parentElement.style.pointerEvents = 'none';
-                }
-              }}
-            >
-              <div className="bg-[#090d16]/90 backdrop-blur-md border border-cyan-500/40 text-stone-200 text-[11px] p-2.5 rounded-lg font-sans shadow-2xl pointer-events-auto select-none flex flex-col gap-1.5 min-w-[190px] max-w-[240px] transition-all duration-150 ease-out">
-                <div className="flex items-center justify-between border-b border-white/10 pb-1">
-                  <span className="font-bold text-[#38bdf8] font-mono uppercase text-[9px] tracking-wider px-1.5 py-0.5 rounded bg-cyan-500/10 border border-cyan-500/20">
-                    {String(activeDisplayMemory.application || activeDisplayMemory.category || 'Memory')}
-                  </span>
-                  <span className="text-[9px] text-stone-400 font-mono">
-                    {activeDisplayMemory.timestamp
-                      ? new Date(activeDisplayMemory.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
-                      : ''}
-                  </span>
-                </div>
-                <h3 className="text-[11px] text-slate-100 font-bold truncate">
-                  {String(activeDisplayMemory.windowTitle || (activeDisplayMemory as any).title || 'Untitled Memory')}
-                </h3>
-                <p className="text-[10px] text-slate-300 line-clamp-2 leading-tight whitespace-normal font-sans">
-                  {String(
-                    activeDisplayMemory.summary ||
-                    activeDisplayMemory.ocrText ||
-                    (activeDisplayMemory as any).content ||
-                    ''
-                  )
-                    .replace(/^(Snippet Extractor:\s*Captured snippet|Analyzed capture of|Captured terminal or application state for)\s*/i, '')
-                    .trim() || 'No preview available'}
-                </p>
-                {activeDisplayMemory.tags && activeDisplayMemory.tags.length > 0 && (
-                  <div className="flex flex-wrap gap-1 mt-0.5">
-                    {activeDisplayMemory.tags.slice(0, 3).map((t, idx) => (
-                      <span key={idx} className="bg-blue-500/10 border border-blue-500/20 text-blue-300 text-[8px] px-1.5 py-0.5 rounded-full font-mono">#{String(t)}</span>
-                    ))}
-                  </div>
-                )}
-                
-                <div className="flex items-center gap-1.5 mt-1 pt-1.5 border-t border-white/10">
-                  <button
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      selectMemory(activeDisplayMemory.id);
-                      setGraphFocus(activeDisplayMemory.id);
-                    }}
-                    className="bg-blue-600 hover:bg-blue-500 text-white text-[9px] font-semibold px-2 py-0.5 rounded-md transition-all shadow-sm cursor-pointer"
-                  >
-                    Focus Flight
-                  </button>
-                  <button
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      selectMemory(activeDisplayMemory.id);
-                    }}
-                    className="bg-white/5 hover:bg-white/15 text-stone-300 hover:text-white border border-white/10 text-[9px] font-medium px-2 py-0.5 rounded-md transition-all cursor-pointer"
-                  >
-                    Inspect
-                  </button>
-                  {selectedMemoryId === activeDisplayMemory.id && (
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        selectMemory(null);
-                        setGraphFocus(null);
-                      }}
-                      className="bg-stone-800 hover:bg-stone-700 text-stone-400 hover:text-stone-200 text-[9px] px-1.5 py-0.5 rounded-md transition-colors cursor-pointer ml-auto"
-                    >
-                      Close
-                    </button>
-                  )}
-                </div>
-              </div>
-            </Html>
-          )}
+          {/* Screen projection tracker for 2D decoupled overlay */}
+          <HudProjectionTracker activePosition={selectedPosition} onProject={setHudScreenPos} />
 
           <CameraController positionsMap={positionsMap} />
         </Canvas>
       </ThreeCanvasErrorBoundary>
+
+      {/* 2D Viewport Screen Overlay HUD Modal - Decoupled from R3F Canvas */}
+      {selectedMemory && hudScreenPos && (
+        <div
+          style={{
+            position: 'absolute',
+            left: `${hudScreenPos.x}px`,
+            top: `${hudScreenPos.y - 16}px`,
+            transform: 'translate(-50%, -100%)'
+          }}
+          className="z-50 w-64 bg-[#090d16]/95 backdrop-blur-xl border border-cyan-500/40 text-stone-200 text-[11px] p-3.5 rounded-xl font-sans shadow-[0_8px_32px_rgba(0,0,0,0.6),0_0_20px_rgba(59,130,246,0.25)] pointer-events-auto select-none flex flex-col gap-2 transition-all duration-150 ease-out"
+        >
+          <div className="flex items-center justify-between border-b border-white/10 pb-1.5">
+            <span className="font-bold text-[#38bdf8] font-mono uppercase text-[9px] tracking-wider px-1.5 py-0.5 rounded bg-cyan-500/10 border border-cyan-500/20">
+              {String(selectedMemory.application || selectedMemory.category || 'Memory')}
+            </span>
+            <button
+              onClick={() => {
+                selectMemory(null);
+                setGraphFocus(null);
+              }}
+              className="text-stone-400 hover:text-white text-xs font-bold px-1 rounded transition-colors cursor-pointer"
+            >
+              ✕
+            </button>
+          </div>
+          <h3 className="text-[11px] text-slate-100 font-bold truncate">
+            {String(selectedMemory.windowTitle || (selectedMemory as any).title || 'Untitled Memory')}
+          </h3>
+          <p className="text-[10px] text-slate-300 line-clamp-3 leading-relaxed whitespace-normal font-sans">
+            {String(
+              selectedMemory.summary ||
+              selectedMemory.ocrText ||
+              (selectedMemory as any).content ||
+              ''
+            )
+              .replace(/^(Snippet Extractor:\s*Captured snippet|Analyzed capture of|Captured terminal or application state for)\s*/i, '')
+              .trim() || 'No preview available'}
+          </p>
+          {selectedMemory.tags && selectedMemory.tags.length > 0 && (
+            <div className="flex flex-wrap gap-1 mt-0.5">
+              {selectedMemory.tags.slice(0, 3).map((t, idx) => (
+                <span key={idx} className="bg-blue-500/10 border border-blue-500/20 text-blue-300 text-[8px] px-1.5 py-0.5 rounded-full font-mono">#{String(t)}</span>
+              ))}
+            </div>
+          )}
+          
+          <div className="flex items-center gap-1.5 mt-1 pt-1.5 border-t border-white/10">
+            <button
+              onClick={() => {
+                selectMemory(selectedMemory.id);
+                setGraphFocus(selectedMemory.id);
+              }}
+              className="bg-blue-600 hover:bg-blue-500 text-white text-[9px] font-semibold px-2.5 py-1 rounded-md transition-all shadow-sm cursor-pointer"
+            >
+              Focus Flight
+            </button>
+            <button
+              onClick={() => selectMemory(selectedMemory.id)}
+              className="bg-white/5 hover:bg-white/15 text-stone-300 hover:text-white border border-white/10 text-[9px] font-medium px-2.5 py-1 rounded-md transition-all cursor-pointer"
+            >
+              Inspect
+            </button>
+            <button
+              onClick={() => {
+                selectMemory(null);
+                setGraphFocus(null);
+              }}
+              className="bg-stone-800 hover:bg-stone-700 text-stone-400 hover:text-stone-200 text-[9px] px-2 py-1 rounded-md transition-colors cursor-pointer ml-auto"
+            >
+              Close
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* Floating Category Legend */}
       <div className="absolute top-4 left-4 p-4 rounded-xl border border-white/5 bg-[#0a0a0f]/80 backdrop-blur-md pointer-events-none glass shadow-xl">
@@ -773,13 +759,47 @@ export default function MemorySpace3D() {
           {Object.entries(CATEGORY_COLORS).map(([category, color]) => (
             <div key={category} className="flex items-center space-x-2.5">
               <span className="w-3 h-3 rounded-full animate-pulse" style={{ backgroundColor: color, boxShadow: `0 0 8px ${color}` }} />
-              <span className="text-xs text-[#FAFAF9] font-medium">{category}</span>
+              <span className="text-xs text-[#FAFAF9] font-medium uppercase text-[10px] font-mono">{category}</span>
             </div>
           ))}
         </div>
       </div>
     </div>
   );
+}
+
+// 3D vector to 2D viewport screen coordinates projection tracker
+function HudProjectionTracker({
+  activePosition,
+  onProject
+}: {
+  activePosition: THREE.Vector3 | null;
+  onProject: (pos: { x: number; y: number } | null) => void;
+}) {
+  const { camera, size } = useThree();
+
+  useFrame(() => {
+    if (!activePosition || !isFiniteVector(activePosition)) {
+      onProject(null);
+      return;
+    }
+
+    const vec = activePosition.clone();
+    vec.project(camera);
+
+    // If node is behind camera view frustum, hide overlay
+    if (vec.z > 1) {
+      onProject(null);
+      return;
+    }
+
+    const x = (vec.x * 0.5 + 0.5) * size.width;
+    const y = (-(vec.y * 0.5) + 0.5) * size.height;
+
+    onProject({ x, y });
+  });
+
+  return null;
 }
 
 // React Error Boundary for 3D Canvas
