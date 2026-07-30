@@ -88,12 +88,19 @@ function InstancedNodes({
       );
       instancedMesh.setMatrixAt(i, dummyMatrix);
 
-      const catKey = (memory.category || (memory as any).type || '').toLowerCase();
-      const baseHex = CATEGORY_COLORS[catKey] || CATEGORY_COLORS.default;
+      let hex = '#38bdf8'; // Bright cyan default
+      if (memory.category) {
+        const cat = memory.category.toLowerCase();
+        if (cat.includes('code') || cat.includes('dev')) hex = '#3b82f6';
+        else if (cat.includes('research') || cat.includes('doc')) hex = '#a855f7';
+        else if (cat.includes('work') || cat.includes('prod')) hex = '#10b981';
+        else if (cat.includes('convo') || cat.includes('chat')) hex = '#f59e0b';
+      }
+
       if (isSelected || isHovered) {
         dummyColor.set('#FAFAF9');
       } else {
-        dummyColor.set(baseHex);
+        dummyColor.set(hex);
       }
       instancedMesh.setColorAt(i, dummyColor);
     }
@@ -654,9 +661,8 @@ export default function MemorySpace3D() {
         >
           <fog attach="fog" args={["#08080d", 15, 60]} />
 
-          <ambientLight intensity={1.5} />
-          <directionalLight position={[15, 20, 10]} intensity={1.6} color="#fffdfa" />
-          <directionalLight position={[-15, -10, -10]} intensity={0.6} color="#e2f1ff" />
+          <ambientLight intensity={2.0} />
+          <directionalLight position={[10, 20, 15]} intensity={1.5} color="#ffffff" />
 
           <pointLight position={[-12, 4, -6]} color="#F43F5E" intensity={2.0} distance={30} decay={1.3} />
           <pointLight position={[12, -4, 6]} color="#0EA5E9" intensity={2.0} distance={30} decay={1.3} />
@@ -766,26 +772,35 @@ export default function MemorySpace3D() {
           
           <div className="flex items-center gap-1.5 mt-1 pt-1.5 border-t border-white/10">
             <button
-              onClick={() => {
-                selectMemory(selectedMemory.id);
-                setGraphFocus(selectedMemory.id);
+              onClick={(e) => {
+                e.stopPropagation();
+                if (selectedMemory && selectedMemory.id) {
+                  selectMemory(selectedMemory.id);
+                  setGraphFocus(selectedMemory.id);
+                }
               }}
-              className="bg-blue-600 hover:bg-blue-500 text-white text-[9px] font-semibold px-2.5 py-1 rounded-md transition-all shadow-sm cursor-pointer"
+              className="flex-1 bg-cyan-500/20 hover:bg-cyan-500/30 text-cyan-300 border border-cyan-500/40 text-[10px] font-semibold py-1 px-2.5 rounded-md transition-all shadow-sm cursor-pointer text-center"
             >
               Focus Flight
             </button>
             <button
-              onClick={() => selectMemory(selectedMemory.id)}
-              className="bg-white/5 hover:bg-white/15 text-stone-300 hover:text-white border border-white/10 text-[9px] font-medium px-2.5 py-1 rounded-md transition-all cursor-pointer"
+              onClick={(e) => {
+                e.stopPropagation();
+                if (selectedMemory && selectedMemory.id) {
+                  selectMemory(selectedMemory.id);
+                }
+              }}
+              className="flex-1 bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 text-[10px] font-semibold py-1 px-2.5 rounded-md transition-all cursor-pointer text-center"
             >
               Inspect
             </button>
             <button
-              onClick={() => {
+              onClick={(e) => {
+                e.stopPropagation();
                 selectMemory(null);
                 setGraphFocus(null);
               }}
-              className="bg-stone-800 hover:bg-stone-700 text-stone-400 hover:text-stone-200 text-[9px] px-2 py-1 rounded-md transition-colors cursor-pointer ml-auto"
+              className="bg-stone-800 hover:bg-stone-700 text-stone-400 hover:text-stone-200 text-[10px] px-2 py-1 rounded-md transition-colors cursor-pointer ml-auto"
             >
               Close
             </button>
