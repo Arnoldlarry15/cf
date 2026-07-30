@@ -707,8 +707,10 @@ export default function MemorySpace3D() {
                     activeDisplayMemory.summary ||
                     activeDisplayMemory.ocrText ||
                     (activeDisplayMemory as any).content ||
-                    'No preview available'
-                  )}
+                    ''
+                  )
+                    .replace(/^(Snippet Extractor:\s*Captured snippet|Analyzed capture of|Captured terminal or application state for)\s*/i, '')
+                    .trim() || 'No preview available'}
                 </p>
                 {activeDisplayMemory.tags && activeDisplayMemory.tags.length > 0 && (
                   <div className="flex flex-wrap gap-1 mt-0.5">

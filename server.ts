@@ -426,6 +426,10 @@ async function startServer() {
       const newId = `mem-${databaseMemories.length + 1}`;
       const newTimestamp = new Date().toISOString();
       
+      const rawOcr = (ocrText || '').trim();
+      const firstSentence = rawOcr.split(/(?<=[.!?])\s+/)[0] || '';
+      const fallbackSummary = (firstSentence.length > 10 ? firstSentence : rawOcr.slice(0, 120)) || 'Captured Workspace Content';
+
       const newMemory: Memory = {
         id: newId,
         imageUrl: (application || '').toLowerCase().replace(/[^a-z]/g, '_') || 'chrome_search',
@@ -435,7 +439,7 @@ async function startServer() {
         category: category || "Productivity",
         confidence: 0.90 + Math.random() * 0.1,
         ocrText: ocrText || `Captured terminal or application state for ${windowTitle || 'window'}`,
-        summary: summary || `Analyzed capture of ${application || 'application'} window title "${windowTitle || ''}".`,
+        summary: summary || fallbackSummary,
         tags: tags && Array.isArray(tags) ? tags : ["captured", (application || 'app').toLowerCase()],
         relationships: [],
         history: [

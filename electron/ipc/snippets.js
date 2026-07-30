@@ -18,6 +18,10 @@ function registerSnippetsIPC(snippetService, aiService, windowsManager) {
       const newKnowledge = await aiService.runIntelligenceExtraction(currentKnowledge, text);
 
       // 3. Map to Memory schema
+      const extractedText = (text || '').trim();
+      const firstSentence = extractedText.split(/(?<=[.!?])\s+/)[0] || '';
+      const fallbackSummary = (firstSentence.length > 10 ? firstSentence : extractedText.slice(0, 120)) || 'Captured Workspace Content';
+
       const newSnippet = {
         id: `mem-${Date.now()}`,
         imageUrl: 'terminal_output',
@@ -27,7 +31,7 @@ function registerSnippetsIPC(snippetService, aiService, windowsManager) {
         category: 'Productivity',
         confidence: 0.95,
         ocrText: text,
-        summary: newKnowledge.startsWith("Error") ? text.substring(0, 100) : newKnowledge,
+        summary: (newKnowledge && !newKnowledge.startsWith("Error")) ? newKnowledge : fallbackSummary,
         tags: ['captured', 'ocr'],
         relationships: [],
         history: [
@@ -103,6 +107,10 @@ function registerSnippetsIPC(snippetService, aiService, windowsManager) {
       return;
     }
 
+    const rawOcr = (payload.ocrText || '').trim();
+    const firstSentence = rawOcr.split(/(?<=[.!?])\s+/)[0] || '';
+    const fallbackSummary = (firstSentence.length > 10 ? firstSentence : rawOcr.slice(0, 120)) || 'Captured Workspace Content';
+
     const newSnippet = {
       id: payload.id || `mem-${Date.now()}`,
       imageUrl: payload.imageUrl || payload.application.toLowerCase().replace(/[^a-z]/g, '_') || 'chrome_search',
@@ -112,7 +120,7 @@ function registerSnippetsIPC(snippetService, aiService, windowsManager) {
       category: payload.category || 'Productivity',
       confidence: payload.confidence || 0.95,
       ocrText: payload.ocrText,
-      summary: payload.summary || payload.ocrText.substring(0, 100),
+      summary: payload.summary || fallbackSummary,
       tags: payload.tags || ['captured'],
       relationships: [],
       history: payload.history || [
