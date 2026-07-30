@@ -157,12 +157,12 @@ function InstancedNodes({
       onPointerOut={handlePointerOut}
       onClick={handleClick}
     >
-      <sphereGeometry args={[0.5, 24, 24]} />
+      <sphereGeometry args={[0.4, 24, 24]} />
       <meshStandardMaterial
-        roughness={0.15}
-        metalness={0.8}
-        emissive="#0ea5e9"
-        emissiveIntensity={0.4}
+        color="#ffffff"
+        vertexColors={true}
+        roughness={0.25}
+        metalness={0.3}
       />
     </instancedMesh>
   );
@@ -687,6 +687,11 @@ export default function MemorySpace3D() {
               distanceFactor={9}
               zIndexRange={[100, 0]}
               className="pointer-events-none select-none z-50"
+              ref={(node) => {
+                if (node && (node as any).parentElement) {
+                  (node as any).parentElement.style.pointerEvents = 'none';
+                }
+              }}
             >
               <div className="bg-[#090d16]/90 backdrop-blur-md border border-cyan-500/40 text-stone-200 text-[11px] p-2.5 rounded-lg font-sans shadow-2xl pointer-events-auto select-none flex flex-col gap-1.5 min-w-[190px] max-w-[240px] transition-all duration-150 ease-out">
                 <div className="flex items-center justify-between border-b border-white/10 pb-1">
