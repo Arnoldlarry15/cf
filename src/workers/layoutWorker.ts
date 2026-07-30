@@ -35,9 +35,9 @@ const COOLING_FACTOR = 0.995;
 const MIN_VELOCITY_SQ = 0.0001;
 
 // Physics parameters
-let repulsionStrength = 20.0;
-let attractionStrength = 0.08;
-let damping = 0.88;
+let repulsionStrength = 1.2;
+let attractionStrength = 0.05;
+let damping = 0.92;
 let gravityStrength = 0.02;
 
 self.onmessage = (event: MessageEvent) => {
@@ -173,6 +173,8 @@ function runSimulationStep() {
 
   // Step 3: Cluster Anchor Gravity & Velocity Damping
   let maxVelSq = 0;
+  const MAX_VEL = 0.15;
+  const MAX_VEL_SQ = MAX_VEL * MAX_VEL;
 
   for (let i = 0; i < n; i++) {
     const i3 = i * 3;
@@ -193,14 +195,23 @@ function runSimulationStep() {
     vel[i3 + 1] *= damping;
     vel[i3 + 2] *= damping;
 
+    // Velocity clamping pass to eliminate aggressive bouncing
+    const vSq = vel[i3] * vel[i3] + vel[i3 + 1] * vel[i3 + 1] + vel[i3 + 2] * vel[i3 + 2];
+    if (vSq > MAX_VEL_SQ) {
+      const scale = MAX_VEL / Math.sqrt(vSq);
+      vel[i3] *= scale;
+      vel[i3 + 1] *= scale;
+      vel[i3 + 2] *= scale;
+    }
+
     // Update positions
     pos[i3] += vel[i3];
     pos[i3 + 1] += vel[i3 + 1];
     pos[i3 + 2] += vel[i3 + 2];
 
     // Energy tracking
-    const vSq = vel[i3] * vel[i3] + vel[i3 + 1] * vel[i3 + 1] + vel[i3 + 2] * vel[i3 + 2];
-    if (vSq > maxVelSq) maxVelSq = vSq;
+    const finalVSq = vel[i3] * vel[i3] + vel[i3 + 1] * vel[i3 + 1] + vel[i3 + 2] * vel[i3 + 2];
+    if (finalVSq > maxVelSq) maxVelSq = finalVSq;
   }
 
   // Decay cooling alpha
