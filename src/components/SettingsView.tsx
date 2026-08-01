@@ -1,25 +1,36 @@
-import React from 'react';
-import { Settings, ShieldCheck, Key, RefreshCw, ToggleLeft, ToggleRight, Check, HardDrive, Database, Monitor } from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import { Settings, ShieldCheck, Key, RefreshCw, ToggleLeft, ToggleRight, Check, HardDrive, Database, Monitor, Globe, Save } from 'lucide-react';
 import { useAppStore } from '../store';
+import { getUserSettings, saveUserSettings, getApiBase, setApiBase, UserSettings } from '../config';
 
 export default function SettingsView() {
   const memories = useAppStore(state => state.memories);
-  const [oauthEnabled, setOauthEnabled] = React.useState(false);
-  const [refreshing, setRefreshing] = React.useState(false);
-  const [success, setSuccess] = React.useState(false);
+  const [userSettings, setUserSettingsState] = useState<UserSettings>(getUserSettings);
+  const [apiBaseUrl, setApiBaseUrlState] = useState<string>(getApiBase);
+  const [refreshing, setRefreshing] = useState(false);
+  const [savedSuccess, setSavedSuccess] = useState(false);
+
+  useEffect(() => {
+    const loaded = getUserSettings();
+    setUserSettingsState(loaded);
+  }, []);
 
   const handleToggleOauth = () => {
-    if (!oauthEnabled) {
-      setRefreshing(true);
-      setTimeout(() => {
-        setOauthEnabled(true);
-        setRefreshing(false);
-        setSuccess(true);
-        setTimeout(() => setSuccess(false), 2000);
-      }, 1000);
-    } else {
-      setOauthEnabled(false);
-    }
+    const nextState = !userSettings.oauthEnabled;
+    setRefreshing(true);
+    setTimeout(() => {
+      const updated = saveUserSettings({ oauthEnabled: nextState });
+      setUserSettingsState(updated);
+      setRefreshing(false);
+      setSavedSuccess(true);
+      setTimeout(() => setSavedSuccess(false), 2500);
+    }, 600);
+  };
+
+  const handleSaveApiBase = () => {
+    setApiBase(apiBaseUrl);
+    setSavedSuccess(true);
+    setTimeout(() => setSavedSuccess(false), 2500);
   };
 
   return (
@@ -66,6 +77,39 @@ export default function SettingsView() {
             </div>
           </div>
 
+          {/* API Server Endpoint Config */}
+          <div className="p-6 rounded-2xl border border-white/5 bg-[#0a0a0f]/80 space-y-4 glass shadow-xl">
+            <h3 className="text-xs font-bold tracking-wider text-stone-400 uppercase border-b border-white/5 pb-3 flex items-center space-x-2">
+              <Globe size={14} className="text-blue-400" />
+              <span>Cognitive API Endpoint</span>
+            </h3>
+            <p className="text-xs text-stone-400 leading-relaxed">
+              Base URL for the server REST and Express backend. Persisted directly in LocalStorage.
+            </p>
+            <div className="flex gap-2">
+              <input
+                type="text"
+                value={apiBaseUrl}
+                onChange={(e) => setApiBaseUrlState(e.target.value)}
+                placeholder="http://localhost:3000"
+                className="flex-1 px-3 py-2 bg-[#050507]/80 text-[#FAFAF9] text-xs font-mono border border-white/10 rounded-xl focus:outline-none focus:border-blue-500/50"
+              />
+              <button
+                onClick={handleSaveApiBase}
+                className="px-3.5 py-2 bg-blue-600/20 hover:bg-blue-600/30 text-blue-400 border border-blue-500/30 rounded-xl text-xs font-semibold flex items-center space-x-1.5 transition cursor-pointer"
+              >
+                <Save size={13} />
+                <span>Save</span>
+              </button>
+            </div>
+            {savedSuccess && (
+              <div className="p-2.5 rounded-xl bg-emerald-500/10 border border-emerald-500/20 text-[11px] text-emerald-400 flex items-center space-x-2 animate-fade-in">
+                <Check size={13} />
+                <span>Settings saved and synced to LocalStorage!</span>
+              </div>
+            )}
+          </div>
+
           {/* Cloud Google Workspace Integration */}
           <div className="p-6 rounded-2xl border border-white/5 bg-[#0a0a0f]/80 space-y-4 glass shadow-xl">
             <h3 className="text-xs font-bold tracking-wider text-stone-400 uppercase border-b border-white/5 pb-3 flex items-center space-x-2">
@@ -84,7 +128,7 @@ export default function SettingsView() {
                 <div>
                   <span className="text-xs font-bold text-stone-200 block">Google Drive Synchronization</span>
                   <span className="text-[10px] text-stone-500 mt-0.5 block">
-                    {oauthEnabled ? 'Tokens refreshed. Mapped metadata read successfully.' : 'Sync offline. Requires OAuth Client Authentication.'}
+                    {userSettings.oauthEnabled ? 'Tokens refreshed. Mapped metadata read successfully.' : 'Sync offline. Requires OAuth Client Authentication.'}
                   </span>
                 </div>
               </div>
@@ -96,7 +140,7 @@ export default function SettingsView() {
               >
                 {refreshing ? (
                   <RefreshCw size={24} className="animate-spin text-blue-400" />
-                ) : oauthEnabled ? (
+                ) : userSettings.oauthEnabled ? (
                   <ToggleRight size={32} className="text-blue-400" />
                 ) : (
                   <ToggleLeft size={32} className="text-stone-500" />
@@ -104,7 +148,7 @@ export default function SettingsView() {
               </button>
             </div>
 
-            {oauthEnabled && (
+            {userSettings.oauthEnabled && (
               <div className="p-3.5 rounded-xl bg-emerald-500/10 border border-emerald-500/20 text-[11px] text-emerald-400 flex items-center space-x-2.5 animate-fade-in">
                 <Check size={14} className="animate-bounce" />
                 <span>Google Workspace cloud mapping active. Reading Drive files metadata.</span>

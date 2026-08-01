@@ -170,12 +170,26 @@ export default function MemoriesGrid() {
 
       {/* Grid container */}
       {filteredMemories.length === 0 ? (
-        <div className="p-12 text-center border border-dashed border-white/5 rounded-2xl bg-[#0a0a0f]/40 space-y-2 glass">
-          <AlertCircle className="mx-auto text-stone-600" size={32} />
-          <h3 className="text-sm font-semibold text-stone-400">No memories matched search query</h3>
-          <p className="text-xs text-stone-500 max-w-sm mx-auto">
-            Try resetting your filters or keyword query to explore wider snapshot ranges.
-          </p>
+        <div className="p-12 text-center border border-dashed border-white/10 rounded-2xl bg-[#0a0a0f]/60 space-y-4 glass shadow-xl">
+          <div className="w-12 h-12 rounded-full bg-blue-500/10 border border-blue-500/20 flex items-center justify-center mx-auto text-blue-400">
+            <AlertCircle size={24} />
+          </div>
+          <div className="space-y-1">
+            <h3 className="text-sm font-semibold text-stone-200">No memories match your query</h3>
+            <p className="text-xs text-stone-400 max-w-sm mx-auto">
+              We couldn't find any memory logs matching "{searchQuery || selectedCategory || 'active filters'}". Try resetting your search or category filter.
+            </p>
+          </div>
+          <button
+            onClick={() => {
+              setSearchQuery('');
+              setSelectedCategory(null);
+              setMinConfidence(0);
+            }}
+            className="px-4 py-2 bg-blue-600/20 hover:bg-blue-600/30 text-blue-400 border border-blue-500/30 rounded-xl text-xs font-semibold transition cursor-pointer"
+          >
+            Reset Filters
+          </button>
         </div>
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">

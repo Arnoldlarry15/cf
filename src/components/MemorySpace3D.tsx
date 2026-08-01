@@ -106,8 +106,8 @@ function InstancedNodes({
     }
 
     instancedMesh.instanceMatrix.needsUpdate = true;
-    if (instancedMesh.instanceColor) {
-      instancedMesh.instanceColor.needsUpdate = true;
+    if (meshRef.current?.instanceColor) {
+      meshRef.current.instanceColor.needsUpdate = true;
     }
   }, [positionsArray, visibleMemories, count, selectedMemoryId, activeGraphFocusId, hoveredIndex, dummyMatrix, dummyColor, dummyScale]);
 
@@ -174,8 +174,8 @@ function InstancedNodes({
       <meshStandardMaterial
         color="#ffffff"
         vertexColors={true}
-        roughness={0.25}
-        metalness={0.3}
+        roughness={0.3}
+        metalness={0.2}
       />
     </instancedMesh>
   );
@@ -661,8 +661,8 @@ export default function MemorySpace3D() {
         >
           <fog attach="fog" args={["#08080d", 15, 60]} />
 
-          <ambientLight intensity={2.0} />
-          <directionalLight position={[10, 20, 15]} intensity={1.5} color="#ffffff" />
+          <ambientLight intensity={2.2} />
+          <directionalLight position={[10, 20, 15]} intensity={1.5} />
 
           <pointLight position={[-12, 4, -6]} color="#F43F5E" intensity={2.0} distance={30} decay={1.3} />
           <pointLight position={[12, -4, 6]} color="#0EA5E9" intensity={2.0} distance={30} decay={1.3} />
